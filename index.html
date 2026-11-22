@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ScottGrid</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <!-- AUTH VIEW -->
+    <div id="auth-view" class="sg-auth-shell">
+      <div class="sg-auth-card">
+        <div class="sg-logo-orb">S</div>
+        <h1 class="sg-auth-title">ScottGrid</h1>
+        <p id="auth-status" class="sg-auth-sub">Sign in to enter ScottGrid</p>
+
+        <div class="sg-field">
+          <label for="email">Email</label>
+          <input
+            id="email"
+            class="sg-input"
+            type="email"
+            placeholder="you@example.com"
+            autocomplete="email"
+          />
+        </div>
+
+        <div class="sg-field">
+          <label for="password">Password</label>
+          <input
+            id="password"
+            class="sg-input"
+            type="password"
+            placeholder="••••••••"
+            autocomplete="current-password"
+          />
+        </div>
+
+        <div class="sg-auth-actions">
+          <button id="sign-in-btn" type="button" class="sg-btn-cyan">Enter ScottGrid</button>
+          <button id="sign-up-btn" type="button" class="sg-btn-dark">Create Account</button>
+        </div>
+
+        <button id="google-signin-btn" type="button" class="sg-btn-dark" style="margin-top: 10px;">
+          Continue with Google
+        </button>
+      </div>
+    </div>
+
+    <!-- MAIN APP VIEW -->
+    <div id="app-view" style="display: none;">
+      <div class="sg-shell-inner">
+        <!-- Top Header -->
+        <header class="sg-topbar">
+          <div class="sg-topbar-brand">
+            <div class="sg-logo-orb">S</div>
+            <span class="sg-brand-wordmark">ScottGrid</span>
+          </div>
+          <div class="sg-icon-group">
+            <button id="top-bell-btn" type="button" class="sg-icon-btn" title="Signal Feed" aria-label="Signal Feed">🔔</button>
+            <button id="top-grid-btn" type="button" class="sg-icon-btn" title="Radar" aria-label="Radar">⊞</button>
+            <button id="top-compose-btn" type="button" class="sg-icon-btn" title="Chats" aria-label="Chats">✎</button>
+          </div>
+        </header>
+
+        <div class="sg-pills-row">
+          <div id="mesh-status-pill" class="sg-pill"><span class="sg-dot"></span> Mesh Active</div>
+          <div id="nearby-count-pill" class="sg-pill">0 People Nearby</div>
+        </div>
+
+        <div class="sg-search-wrap">
+          <input
+            id="sg-search-input"
+            class="sg-search-input"
+            type="search"
+            placeholder="Search"
+          />
+        </div>
+
+        <span id="nav-display-name" style="display: none;">Member</span>
+        <span id="nav-handle" style="display: none;">@set_handle</span>
+        <h2 id="home-heading" style="display: none;">Welcome to ScottGrid</h2>
+        <p id="home-bio" style="display: none;"></p>
+        <p id="home-email" style="display: none;"></p>
+        <button id="toggle-profile-btn" type="button" style="display: none;"></button>
+        <button id="edit-profile-btn" type="button" style="display: none;"></button>
+        <button id="close-profile-btn" type="button" style="display: none;"></button>
+
+        <div id="home-panel">
+          <!-- NEARBY TAB -->
+          <section id="tab-nearby" class="sg-tab-pane" style="display: block;">
+            <div class="sg-radar-box">
+              <div class="sg-ring sg-ring-1"></div>
+              <div class="sg-ring sg-ring-2"></div>
+              <div class="sg-ring sg-ring-3"></div>
+              <div class="sg-radar-center">
+                <div id="radar-avatar" class="sg-you-node">S</div>
+                <div id="radar-you-label" class="sg-you-label">You</div>
+              </div>
+              <div id="radar-footer" class="sg-radar-footer">
+                Nobody nearby yet — invite friends to join ScottGrid
+              </div>
+            </div>
+          </section>
+
+          <!-- CHATS TAB (WHATSAPP-STYLE LIST + THREAD VIEW) -->
+          <section id="tab-chats" class="sg-tab-pane" data-chat-theme="midnight" style="display: none;">
+            <!-- Chat Thread List View -->
+            <div id="chat-list-view">
+              <div class="sg-wa-list-header">
+                <h2 class="sg-wa-heading">Chats</h2>
+                <select id="chat-theme-select" class="sg-chip-btn" aria-label="Chat theme" title="Chat Theme">
+                  <option value="midnight">Midnight</option>
+                  <option value="emerald">Emerald</option>
+                  <option value="obsidian">Obsidian</option>
+                  <option value="amber">Solar Amber</option>
+                </select>
+              </div>
+
+              <div id="chat-filter-pills" class="sg-wa-filters">
+                <button type="button" class="sg-wa-filter-pill is-active" data-chat-filter="all">All</button>
+                <button type="button" class="sg-wa-filter-pill" data-chat-filter="unread">Unread</button>
+                <button type="button" class="sg-wa-filter-pill" data-chat-filter="favorites">Favorites</button>
+                <button type="button" class="sg-wa-filter-pill" data-chat-filter="groups">Groups</button>
+              </div>
+
+              <div id="chat-thread-list" class="sg-wa-thread-list"></div>
+            </div>
+
+            <!-- Active Chat Thread View -->
+            <div id="chat-thread-view" style="display: none;">
+              <div class="sg-wa-thread-topbar">
+                <button id="chat-back-btn" type="button" class="sg-wa-back-btn" aria-label="Back to chats">
+                  ‹ <span id="chat-total-unread">0</span>
+                </button>
+                <div class="sg-wa-thread-peer">
+                  <div id="chat-active-avatar" class="sg-wa-avatar">S</div>
+                  <div>
+                    <div id="chat-active-title" class="sg-wa-thread-title">Grid Mesh</div>
+                    <div id="chat-peer-sub" class="sg-wa-thread-sub">Encrypted mesh · Tap for info</div>
+                  </div>
+                </div>
+                <div class="sg-call-actions">
+                  <button id="start-video-call-btn" type="button" class="sg-wa-header-icon" title="Video Call" aria-label="Video Call">📹</button>
+                  <button id="start-voice-call-btn" type="button" class="sg-wa-header-icon" title="Voice Call" aria-label="Voice Call">📞</button>
+                </div>
+              </div>
+
+              <div id="chat-messages-box" class="sg-chat-stream">
+                <div id="chats-empty" class="sg-empty-state" style="margin-top: 24px;">
+                  No messages in this chat yet.
+                </div>
+              </div>
+
+              <form id="chat-composer-form" class="sg-wa-composer">
+                <label class="sg-wa-plus-btn" for="chat-media-input" title="Attach Photo or Video">+</label>
+                <input id="chat-media-input" type="file" accept="image/*,video/*" hidden />
+
+                <div class="sg-wa-pill-box">
+                  <input
+                    id="chat-text-input"
+                    class="sg-wa-input"
+                    type="text"
+                    placeholder="Message"
+                    autocomplete="off"
+                  />
+                  <label class="sg-wa-view-once" title="View Once">
+                    <input id="chat-view-once" type="checkbox" />
+                    <span>1x</span>
+                  </label>
+                  <label class="sg-wa-cam-btn" for="chat-media-input" title="Camera / Media">📷</label>
+                </div>
+
+                <button
+                  id="record-voice-btn"
+                  type="button"
+                  class="sg-wa-action-btn"
+                  title="Voice Note"
+                  aria-label="Voice Note"
+                >
+                  🎙
+                </button>
+
+                <button
+                  id="chat-send-btn"
+                  type="submit"
+                  class="sg-wa-action-btn sg-wa-send"
+                  title="Send"
+                  aria-label="Send"
+                  style="display: none;"
+                >
+                  ➤
+                </button>
+              </form>
+            </div>
+          </section>
+
+          <!-- STATUS TAB -->
+          <section id="tab-status" class="sg-tab-pane" style="display: none;">
+            <div id="status-circles-strip" class="sg-circles-strip">
+              <div class="sg-status-mine">
+                <div id="status-avatar" class="sg-status-avatar">S</div>
+                <button
+                  id="add-status-btn"
+                  type="button"
+                  class="sg-status-plus"
+                  title="Post Status"
+                  aria-label="Post Status"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+
+            <div class="sg-panel-card">
+              <label for="status-caption-input">24-Hour Story Caption</label>
+              <input
+                id="status-caption-input"
+                class="sg-input"
+                type="text"
+                placeholder="What's happening on your grid right now?"
+              />
+              <div class="sg-row-actions" style="margin-top: 10px;">
+                <label class="sg-chip-btn" for="status-media-input">
+                  <span>📷 Media</span>
+                  <input id="status-media-input" type="file" accept="image/*,video/*" hidden />
+                </label>
+                <button id="publish-status-btn" type="button" class="sg-btn-cyan" style="width: auto; padding: 10px 18px;">
+                  Post Status
+                </button>
+              </div>
+            </div>
+
+            <div id="status-empty" class="sg-empty-state" style="margin-top: 20px;">
+              No active 24-hour statuses yet.
+            </div>
+            <div id="status-items"></div>
+          </section>
+
+          <!-- FEED TAB -->
+          <section id="tab-feed" class="sg-tab-pane" style="display: none;">
+            <h2 class="sg-section-title">Signal Feed</h2>
+
+            <form id="feed-post-form" class="sg-panel-card">
+              <label for="feed-post-input">Broadcast a Signal Pulse</label>
+              <textarea
+                id="feed-post-input"
+                class="sg-textarea"
+                rows="2"
+                placeholder="Share an update, drop, or signal with the grid..."
+              ></textarea>
+
+              <div class="sg-row-actions" style="margin-top: 10px;">
+                <label class="sg-chip-btn" for="feed-media-input">
+                  <span>📎 Attach Media</span>
+                  <input id="feed-media-input" type="file" accept="image/*,video/*" hidden />
+                </label>
+                <button id="feed-publish-btn" type="submit" class="sg-btn-cyan" style="width: auto; padding: 10px 18px;">
+                  Broadcast
+                </button>
+              </div>
+
+              <p id="feed-media-preview-label" class="sg-note"></p>
+              <p id="feed-status" class="sg-note"></p>
+            </form>
+
+            <div id="feed-empty" class="sg-feed-card">
+              No broadcast pulses found in your grid frequency.
+            </div>
+            <div id="feed-items"></div>
+          </section>
+
+          <!-- WALLET TAB -->
+          <section id="tab-wallet" class="sg-tab-pane" style="display: none;">
+            <div class="sg-panel-card">
+              <span id="wallet-currency-badge" class="sg-currency-badge">USD</span>
+              <div id="wallet-balance-text" class="sg-balance-amount">$0.00</div>
+              <p id="wallet-token-line" class="sg-token-sub">
+                0.00 SGT tokens · <span id="wallet-rewards-text">0.00</span> pending rewards · +$0.50/min live
+              </p>
+
+              <div class="sg-row-actions" style="margin-top: 12px;">
+                <button id="send-tokens-btn" type="button" class="sg-btn-cyan">✈ Send Tokens</button>
+                <button id="withdraw-tokens-btn" type="button" class="sg-btn-dark">👛 Withdraw</button>
+              </div>
+              <p id="wallet-note" class="sg-note"></p>
+            </div>
+
+            <div id="send-tokens-panel" class="sg-panel-card" style="display: none; margin-top: 14px;">
+              <label for="send-recipient">Recipient</label>
+              <input id="send-recipient" class="sg-input" type="text" placeholder="@handle or friend@domain.com" />
+
+              <label for="send-amount" style="margin-top: 10px;">Amount (SGT)</label>
+              <input id="send-amount" class="sg-input" type="number" min="0.1" step="0.1" placeholder="10.0" />
+
+              <label for="send-memo" style="margin-top: 10px;">Memo</label>
+              <input id="send-memo" class="sg-input" type="text" placeholder="Grid reward / transfer note" />
+
+              <div class="sg-row-actions" style="margin-top: 12px;">
+                <button id="confirm-send-btn" type="button" class="sg-btn-cyan">Confirm Transfer</button>
+                <button id="cancel-send-btn" type="button" class="sg-btn-dark">Cancel</button>
+              </div>
+            </div>
+
+            <div id="withdraw-panel" class="sg-panel-card" style="display: none; margin-top: 14px;">
+              <label for="withdraw-method">Method</label>
+              <select id="withdraw-method" class="sg-select">
+                <option value="bank">Bank / IBAN</option>
+                <option value="mobile">Mobile Money</option>
+              </select>
+
+              <label for="withdraw-destination" style="margin-top: 10px;">Destination</label>
+              <input id="withdraw-destination" class="sg-input" type="text" placeholder="Account or mobile number" />
+
+              <label for="withdraw-amount-usd" style="margin-top: 10px;">Amount (USD)</label>
+              <input id="withdraw-amount-usd" class="sg-input" type="number" min="1" step="0.50" placeholder="5.00" />
+
+              <div class="sg-row-actions" style="margin-top: 12px;">
+                <button id="confirm-withdraw-btn" type="button" class="sg-btn-cyan">Cash Out Now</button>
+                <button id="cancel-withdraw-btn" type="button" class="sg-btn-dark">Cancel</button>
+              </div>
+            </div>
+
+            <div id="wallet-activity-box" class="sg-feed-card" style="margin-top: 14px;">
+              <div id="wallet-activity-empty">No transactions yet</div>
+              <div id="wallet-activity-list"></div>
+            </div>
+          </section>
+
+          <!-- ME TAB -->
+          <section id="tab-me" class="sg-tab-pane" style="display: none;">
+            <div class="sg-me-header">
+              <div id="me-avatar" class="sg-me-avatar">S</div>
+              <img id="me-avatar-img" alt="Profile avatar" class="sg-me-avatar-img" style="display: none;" />
+              <div>
+                <h2 id="me-handle-heading" class="sg-me-handle">@member</h2>
+                <p id="me-subtitle" class="sg-me-role">ScottGrid Member</p>
+              </div>
+            </div>
+
+            <form id="profile-form" class="sg-panel-card">
+              <label for="avatar-photo-input">Profile Picture (or auto-uses First Name initial)</label>
+              <div class="sg-row-actions" style="margin-top: 6px;">
+                <label class="sg-chip-btn" for="avatar-photo-input">
+                  <span>Upload Photo</span>
+                  <input id="avatar-photo-input" type="file" accept="image/*" hidden />
+                </label>
+                <button id="clear-avatar-btn" type="button" class="sg-chip-btn">Use Initial</button>
+              </div>
+
+              <label for="handle" style="margin-top: 12px;">Handle</label>
+              <input id="handle" class="sg-input" type="text" placeholder="@member" />
+
+              <label for="display-name" style="margin-top: 12px;">Display Name</label>
+              <input id="display-name" class="sg-input" type="text" placeholder="Your name" />
+
+              <label for="bio" style="margin-top: 12px;">Bio</label>
+              <textarea id="bio" class="sg-textarea" rows="3" placeholder="Tell people on the grid about you..."></textarea>
+
+              <label class="sg-inline-check" style="margin-top: 12px;">
+                <input id="ghost-mode" type="checkbox" class="sg-checkbox" />
+                <span>Ghost Mode</span>
+              </label>
+
+              <label for="display-currency" style="margin-top: 12px;">Display Currency</label>
+              <select id="display-currency" class="sg-select">
+                <option value="USD">USD</option>
+                <option value="UGX">UGX</option>
+                <option value="EUR">EUR</option>
+              </select>
+
+              <div class="sg-row-actions" style="margin-top: 14px;">
+                <button id="save-profile-btn" type="submit" class="sg-btn-cyan">Save Changes</button>
+                <button id="sign-out-btn" type="button" class="sg-signout-btn">Sign Out</button>
+              </div>
+
+              <p id="profile-status" class="sg-note"></p>
+            </form>
+          </section>
+        </div>
+
+        <!-- CALL MODAL -->
+        <div id="call-modal" class="sg-modal-backdrop" style="display: none;">
+          <div class="sg-modal-card">
+            <div class="sg-modal-head">
+              <strong id="call-modal-title">Grid Call</strong>
+              <button id="end-call-btn" type="button" class="sg-danger-pill">End Call</button>
+            </div>
+            <div id="call-video-stage" class="sg-video-stage">
+              <video id="local-call-video" autoplay playsinline muted class="sg-video-el"></video>
+              <div id="call-placeholder" class="sg-call-placeholder">Connecting live mesh stream...</div>
+            </div>
+            <div class="sg-row-actions" style="margin-top: 12px;">
+              <button id="toggle-mic-btn" type="button" class="sg-chip-btn">🎤 Mic On</button>
+              <button id="toggle-cam-btn" type="button" class="sg-chip-btn">📷 Cam On</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- STORY MODAL -->
+        <div id="story-modal" class="sg-modal-backdrop" style="display: none;">
+          <div class="sg-modal-card">
+            <div class="sg-modal-head">
+              <strong id="story-viewer-author">My status</strong>
+              <button id="close-story-btn" type="button" class="sg-chip-btn">✕ Close</button>
+            </div>
+            <div id="story-viewer-body" class="sg-story-viewer-body"></div>
+          </div>
+        </div>
+
+        <!-- BOTTOM NAV -->
+        <nav class="sg-bottom-nav" aria-label="Primary Navigation">
+          <div id="sg-bottom-inner" class="sg-bottom-inner">
+            <button id="nav-nearby" type="button" class="sg-nav-btn is-active" data-tab="nearby">
+              <span>📍</span>
+              <span>Nearby</span>
+            </button>
+            <button id="nav-chats" type="button" class="sg-nav-btn" data-tab="chats">
+              <span>💬</span>
+              <span>Chats</span>
+            </button>
+            <button id="nav-status" type="button" class="sg-nav-btn" data-tab="status">
+              <span>◔</span>
+              <span>Status</span>
+            </button>
+            <button id="nav-feed" type="button" class="sg-nav-btn" data-tab="feed">
+              <span>📡</span>
+              <span>Feed</span>
+            </button>
+            <button id="nav-wallet" type="button" class="sg-nav-btn" data-tab="wallet">
+              <span>👛</span>
+              <span>Wallet</span>
+            </button>
+            <button id="nav-me" type="button" class="sg-nav-btn" data-tab="me">
+              <span>👤</span>
+              <span>Me</span>
+            </button>
+          </div>
+        </nav>
+      </div>
+    </div>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
