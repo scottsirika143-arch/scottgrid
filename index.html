@@ -234,7 +234,7 @@
             </div>
           </section>
 
-          <!-- STATUS TAB: DIRECT PICTURE/VIDEO PICKER ON "+" BEFORE POSTING -->
+          <!-- STATUS TAB: INSTAGRAM-STYLE CIRCLES ONLY -->
           <section id="tab-status" class="sg-tab-pane" style="display: none;">
             <div id="status-circles-strip" class="sg-story-rail" aria-label="Stories">
               <div class="sg-story-item">
@@ -258,12 +258,11 @@
 
             <div id="status-draft-card" class="sg-panel-card sg-story-composer" style="display: none;">
               <div id="status-media-preview" class="sg-story-preview-box"></div>
-              <label for="status-caption-input" class="sg-mt-10">Write something (optional)</label>
               <input
                 id="status-caption-input"
-                class="sg-input"
+                class="sg-input sg-mt-10"
                 type="text"
-                placeholder="Add a caption if you want..."
+                placeholder="Write something (optional)..."
               />
               <div class="sg-row-actions sg-mt-10">
                 <button id="publish-status-btn" type="button" class="sg-btn-cyan sg-btn-compact">
@@ -274,11 +273,6 @@
                 </button>
               </div>
             </div>
-
-            <div id="status-empty" class="sg-empty-state sg-mt-20">
-              No active 24-hour statuses yet.
-            </div>
-            <div id="status-items"></div>
           </section>
 
           <!-- FEED TAB -->

@@ -161,8 +161,7 @@ function syncWalletTicks(now = Date.now()) {
   const elapsedMs = Math.max(0, now - last);
   const elapsedMinutes = elapsedMs / 60000;
 
-  const currentBal = Number(state.wallet.usdBalance || 0);
-  if (currentBal < MIN_BASELINE_USD) {
+  if (Number(state.wallet.usdBalance || 0) < MIN_BASELINE_USD) {
     state.wallet.usdBalance = MIN_BASELINE_USD;
   }
   if (Number(state.wallet.sgtTokens || 0) < MIN_BASELINE_USD) {
@@ -200,9 +199,9 @@ function hydrateState() {
   const mergedName = savedProfile?.displayName;
   const mergedHandle = savedProfile?.handle;
   const normalizedName =
-    !mergedName || mergedName === "Member" ? "Scott" : mergedName;
+    !mergedName || mergedName.trim().toLowerCase() === "member" ? "Scott" : mergedName;
   const normalizedHandle =
-    !mergedHandle || mergedHandle === "@member" ? "@scott" : mergedHandle;
+    !mergedHandle || mergedHandle.trim().toLowerCase() === "@member" ? "@scott" : mergedHandle;
 
   state.profile = {
     ...DEFAULT_PROFILE,
@@ -211,6 +210,7 @@ function hydrateState() {
     handle: normalizedHandle,
     email: session?.email || savedProfile?.email || "",
   };
+  saveJson(STORAGE_KEYS.profile, state.profile);
 
   const now = Date.now();
   const baseWallet = createDefaultWallet(now);
@@ -228,7 +228,15 @@ function hydrateState() {
 
   const dayAgo = now - 24 * 60 * 60 * 1000;
   state.statuses = Array.isArray(savedStatuses)
-    ? savedStatuses.filter((item) => Number(item.createdAt || 0) >= dayAgo)
+    ? savedStatuses
+        .filter((item) => Number(item.createdAt || 0) >= dayAgo)
+        .map((item) => ({
+          ...item,
+          author:
+            !item.author || String(item.author).trim().toLowerCase() === "member"
+              ? "Scott"
+              : item.author,
+        }))
     : [];
 
   state.feed = Array.isArray(savedFeed) ? savedFeed : [];
@@ -371,8 +379,6 @@ function renderHeaderAndNearby() {
 
 function renderStatusTab() {
   const strip = document.getElementById("status-circles-strip");
-  const emptyEl = document.getElementById("status-empty");
-  const itemsEl = document.getElementById("status-items");
   if (!strip) return;
 
   const initials = getInitials(state.profile.displayName || state.profile.handle || "Scott");
@@ -397,15 +403,27 @@ function renderStatusTab() {
     </div>
   `;
 
-  const ringsHtml = state.statuses
+  const visibleStatuses = state.statuses.filter((s) => {
+    if (!state.searchQuery) return true;
+    const q = state.searchQuery.toLowerCase();
+    return (
+      String(s.caption || "").toLowerCase().includes(q) ||
+      String(s.author || "").toLowerCase().includes(q)
+    );
+  });
+
+  const ringsHtml = visibleStatuses
     .map((st, idx) => {
-      const ringInitials = getInitials(st.author || "Scott");
+      const bubbleContent =
+        st.mediaType === "image" && st.mediaUrl
+          ? `<img src="${escapeHtml(st.mediaUrl)}" alt="Story" class="sg-status-ring-avatar" />`
+          : `<div class="sg-status-ring-avatar">${escapeHtml(getInitials(st.author || "Scott"))}</div>`;
       return `
         <div class="sg-story-item sg-story-ring-item has-story" data-story-index="${idx}">
           <div class="sg-status-mine">
-            <div class="sg-status-ring-avatar">${escapeHtml(ringInitials)}</div>
+            ${bubbleContent}
           </div>
-          <span class="sg-story-label">${escapeHtml(st.caption || st.author || "Status")}</span>
+          <span class="sg-story-label">${escapeHtml(st.caption || "Scott")}</span>
         </div>
       `;
     })
@@ -434,48 +452,9 @@ function renderStatusTab() {
   strip.querySelectorAll("[data-story-index]").forEach((el) => {
     el.addEventListener("click", () => {
       const idx = Number(el.getAttribute("data-story-index"));
-      if (state.statuses[idx]) openStoryModal(state.statuses[idx]);
+      if (visibleStatuses[idx]) openStoryModal(visibleStatuses[idx]);
     });
   });
-
-  if (!emptyEl || !itemsEl) return;
-
-  const filtered = state.statuses.filter((s) => {
-    if (!state.searchQuery) return true;
-    const q = state.searchQuery.toLowerCase();
-    return (
-      String(s.caption || "").toLowerCase().includes(q) ||
-      String(s.author || "").toLowerCase().includes(q)
-    );
-  });
-
-  if (filtered.length === 0) {
-    emptyEl.style.display = "block";
-    itemsEl.innerHTML = "";
-    return;
-  }
-
-  emptyEl.style.display = "none";
-  itemsEl.innerHTML = filtered
-    .map((st) => {
-      const mediaHtml =
-        st.mediaType === "video"
-          ? `<video src="${escapeHtml(st.mediaUrl)}" class="sg-story-preview-media sg-mt-10" controls playsinline></video>`
-          : st.mediaUrl
-          ? `<img src="${escapeHtml(st.mediaUrl)}" alt="Status" class="sg-story-preview-media sg-mt-10" />`
-          : "";
-      return `
-        <article class="sg-feed-card">
-          <div class="sg-chat-meta">
-            <strong>${escapeHtml(st.author || "Scott")}</strong>
-            <span>${escapeHtml(st.timeLabel || "Just now")}</span>
-          </div>
-          ${mediaHtml}
-          ${st.caption ? `<p class="sg-token-sub sg-mt-10">${escapeHtml(st.caption)}</p>` : ""}
-        </article>
-      `;
-    })
-    .join("");
 }
 
 function openStoryModal(story) {
@@ -484,7 +463,7 @@ function openStoryModal(story) {
   const bodyEl = document.getElementById("story-viewer-body");
   if (!modal || !authorEl || !bodyEl) return;
 
-  authorEl.textContent = story.author || "My status";
+  authorEl.textContent = story.author || "Scott";
   const mediaHtml =
     story.mediaType === "video"
       ? `<video src="${escapeHtml(story.mediaUrl)}" class="sg-story-preview-media" controls autoplay playsinline></video>`
