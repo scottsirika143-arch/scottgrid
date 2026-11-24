@@ -33,6 +33,15 @@ body {
   -webkit-text-size-adjust: 100%;
 }
 
+.sg-spider-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 15;
+}
+
 .sg-word-scott {
   color: #ffffff;
   font-weight: 800;
