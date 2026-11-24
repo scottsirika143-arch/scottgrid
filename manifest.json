@@ -3,10 +3,11 @@
   "short_name": "ScottGrid",
   "description": "ScottGrid mesh signal, status, and SGT token wallet app.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#060714",
-  "theme_color": "#060714",
+  "background_color": "#060b19",
+  "theme_color": "#060b19",
   "icons": [
     {
       "src": "/logo.png",

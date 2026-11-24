@@ -1,1104 +1,1295 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+// ScottGrid Core Application Module
 
-const SUPABASE_URL = 'https://yjcxhhzpfrezpxnxmvxf.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_k745t00MV8hDHJS_mUAAew_By13JCjF';
+const STORAGE_KEYS = {
+  session: "scottgrid.session.v1",
+  profile: "scottgrid.profile.v1",
+  wallet: "scottgrid.wallet.v1",
+  statuses: "scottgrid.statuses.v1",
+  feed: "scottgrid.feed.v1",
+  chats: "scottgrid.chats.v1",
+  chatTheme: "scottgrid.chatTheme.v1",
+};
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true
+const MIN_BASELINE_USD = 0.84;
+const EARN_PER_MINUTE = 0.5;
+const SGT_PER_MINUTE = 1.0;
+
+const CURRENCY_RATES = {
+  USD: { symbol: "$", rate: 1, decimals: 2 },
+  UGX: { symbol: "UGX ", rate: 3700, decimals: 0 },
+  EUR: { symbol: "€", rate: 0.92, decimals: 2 },
+};
+
+const DEFAULT_PROFILE = {
+  email: "",
+  handle: "@scott",
+  displayName: "Scott",
+  bio: "",
+  ghostMode: false,
+  displayCurrency: "USD",
+  avatarDataUrl: "",
+};
+
+function createDefaultWallet(now = Date.now()) {
+  return {
+    usdBalance: MIN_BASELINE_USD,
+    sgtTokens: MIN_BASELINE_USD,
+    pendingRewards: MIN_BASELINE_USD,
+    lastEarnedAt: now,
+    transactions: [],
+  };
+}
+
+function createDefaultChats() {
+  return [
+    {
+      id: "mesh-lobby",
+      name: "Grid Mesh",
+      subtitle: "Local signal room · Online",
+      avatar: "GM",
+      unread: 1,
+      favorite: true,
+      isGroup: true,
+      lastTime: "Now",
+      messages: [
+        {
+          id: "m-1",
+          sender: "Grid Mesh",
+          text: "Welcome to ScottGrid. Mesh signal is live.",
+          time: "Just now",
+          outgoing: false,
+        },
+      ],
+    },
+    {
+      id: "signal-ops",
+      name: "Signal Relay",
+      subtitle: "Mesh node · Active",
+      avatar: "SR",
+      unread: 0,
+      favorite: false,
+      isGroup: false,
+      lastTime: "2m",
+      messages: [
+        {
+          id: "m-2",
+          sender: "Signal Relay",
+          text: "Peer discovery ready when nearby nodes come online.",
+          time: "2m ago",
+          outgoing: false,
+        },
+      ],
+    },
+  ];
+}
+
+function loadJson(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    return JSON.parse(raw);
+  } catch {
+    return fallback;
   }
-});
+}
 
-const VALID_THEMES = ['midnight', 'emerald', 'obsidian', 'amber'];
-
-const DEFAULT_THREADS = [
-  {
-    id: 'grid-broadcast',
-    title: 'Grid Broadcasts',
-    subtitle: 'Encrypted mesh · Official ScottGrid room',
-    avatar: 'SG',
-    lastMessage: 'Welcome to ScottGrid mesh chat',
-    lastTime: 'Now',
-    unread: 1,
-    favorite: true,
-    isGroup: true,
-    messages: [
-      {
-        sender: '@scottgrid',
-        text: 'Welcome to ScottGrid! Pick a chat thread or switch themes in Chats.',
-        time: 'Now',
-        viewOnce: false,
-        outgoing: false
-      }
-    ]
-  },
-  {
-    id: 'mesh-builders',
-    title: 'Kampala Mesh Builders',
-    subtitle: '4 members · Live grid channel',
-    avatar: 'MB',
-    lastMessage: '🎙 Voice note (0:12)',
-    lastTime: '7:45 PM',
-    unread: 0,
-    favorite: false,
-    isGroup: true,
-    messages: [
-      {
-        sender: '@builder',
-        text: '🎙 Voice note (0:12)',
-        time: '7:45 PM',
-        viewOnce: false,
-        outgoing: false
-      }
-    ]
-  },
-  {
-    id: 'direct-signal',
-    title: 'Direct Signal Desk',
-    subtitle: 'Encrypted 1:1 channel',
-    avatar: 'DS',
-    lastMessage: 'Tap to send a message or voice note',
-    lastTime: '6:30 PM',
-    unread: 0,
-    favorite: true,
-    isGroup: false,
-    messages: []
+function saveJson(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Ignore storage quota errors on large media
   }
-];
+}
+
+function escapeHtml(text) {
+  return String(text || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function getInitials(nameOrHandle) {
+  const raw = String(nameOrHandle || "").trim();
+  const clean = raw.replace(/^@+/, "").trim();
+  if (!clean || clean.toLowerCase() === "member") return "S";
+  const parts = clean.split(/\s+/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return clean.slice(0, 1).toUpperCase();
+}
+
+function formatMoney(usdAmount, currencyCode = "USD") {
+  const cfg = CURRENCY_RATES[currencyCode] || CURRENCY_RATES.USD;
+  const converted = Number(usdAmount || 0) * cfg.rate;
+  const formatted =
+    cfg.decimals === 0
+      ? Math.round(converted).toLocaleString("en-US")
+      : converted.toLocaleString("en-US", {
+          minimumFractionDigits: cfg.decimals,
+          maximumFractionDigits: cfg.decimals,
+        });
+  return `${cfg.symbol}${formatted}`;
+}
 
 const state = {
-  user: null,
-  profile: {
-    id: null,
-    display_name: 'ScottGrid Member',
-    handle: '@member',
-    bio: ''
-  },
-  posts: [],
-  threads: DEFAULT_THREADS.map((t) => ({ ...t, messages: [...t.messages] })),
-  activeThreadId: null,
-  chatFilter: 'all',
-  searchQuery: '',
-  selectedBand: 'ALL',
-  feedChannel: null,
-  chatTheme: 'midnight',
+  authenticated: false,
+  activeTab: "nearby",
+  searchQuery: "",
+  profile: { ...DEFAULT_PROFILE },
+  wallet: createDefaultWallet(),
+  statuses: [],
+  feed: [],
+  chats: createDefaultChats(),
+  activeChatId: null,
+  chatFilter: "all",
+  pendingStatusMedia: null,
+  pendingFeedMedia: null,
+  pendingChatMedia: null,
+  callStream: null,
+  micEnabled: true,
+  camEnabled: true,
   mediaRecorder: null,
-  audioChunks: []
+  audioChunks: [],
 };
 
-const signInBtn = document.getElementById('sign-in-btn');
-const signUpBtn = document.getElementById('sign-up-btn');
-const emailInput =
-  document.getElementById('email') ||
-  document.getElementById('auth-email') ||
-  document.querySelector('input[type="email"]');
-const passwordInput =
-  document.getElementById('password') ||
-  document.getElementById('auth-password') ||
-  document.querySelector('input[type="password"]');
+// --- SESSION & PERSISTENCE ---
+function syncWalletTicks(now = Date.now()) {
+  const last = Number(state.wallet.lastEarnedAt || now);
+  const elapsedMs = Math.max(0, now - last);
+  const elapsedMinutes = elapsedMs / 60000;
 
-const authView = document.getElementById('auth-view');
-const appView = document.getElementById('app-view');
-
-const els = {
-  authBanner: document.getElementById('auth-status'),
-  googleSignInBtn: document.getElementById('google-signin-btn'),
-  signOutBtn: document.getElementById('sign-out-btn'),
-
-  // Bottom navigation & tab views
-  tabButtons: document.querySelectorAll('[data-tab]'),
-  tabPanels: document.querySelectorAll('.sg-tab-pane'),
-  searchInput: document.getElementById('sg-search-input'),
-
-  // Chat list & thread controls
-  tabChats: document.getElementById('tab-chats'),
-  chatThemeSelect: document.getElementById('chat-theme-select'),
-  chatListView: document.getElementById('chat-list-view'),
-  chatThreadView: document.getElementById('chat-thread-view'),
-  chatFilterPills: document.querySelectorAll('[data-chat-filter]'),
-  chatThreadList: document.getElementById('chat-thread-list'),
-  chatBackBtn: document.getElementById('chat-back-btn'),
-  chatTotalUnread: document.getElementById('chat-total-unread'),
-  chatActiveAvatar: document.getElementById('chat-active-avatar'),
-  chatActiveTitle: document.getElementById('chat-active-title'),
-  chatPeerSub: document.getElementById('chat-peer-sub'),
-  chatComposerForm: document.getElementById('chat-composer-form'),
-  chatTextInput: document.getElementById('chat-text-input'),
-  chatSendBtn: document.getElementById('chat-send-btn'),
-  recordVoiceBtn: document.getElementById('record-voice-btn'),
-  chatMediaInput: document.getElementById('chat-media-input'),
-  chatViewOnce: document.getElementById('chat-view-once'),
-  chatMessagesBox: document.getElementById('chat-messages-box'),
-  chatsEmpty: document.getElementById('chats-empty'),
-
-  // Feed & Frequency controls
-  bandFilterSelect: document.getElementById('feed-band-filter'),
-  bandChips: document.querySelectorAll('[data-band]'),
-  feedForm: document.getElementById('feed-post-form'),
-  feedBandInput: document.getElementById('feed-post-band'),
-  feedTextInput: document.getElementById('feed-post-input'),
-  feedPublishBtn: document.getElementById('feed-publish-btn'),
-  feedStatus: document.getElementById('feed-status'),
-  feedEmpty: document.getElementById('feed-empty'),
-  feedList: document.getElementById('feed-items'),
-
-  // Me / Profile controls
-  profileBadgeName: document.getElementById('nav-display-name'),
-  profileBadgeHandle: document.getElementById('me-handle-heading'),
-  profileBadgeBio: document.getElementById('me-subtitle'),
-  profileForm: document.getElementById('profile-form'),
-  saveProfileBtn: document.getElementById('save-profile-btn'),
-  handleInput: document.getElementById('handle'),
-  displayNameInput: document.getElementById('display-name'),
-  bioInput: document.getElementById('bio'),
-  profileStatus: document.getElementById('profile-status')
-};
-
-function escapeHtml(value = '') {
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function normalizeHandle(rawHandle, fallbackEmail = '') {
-  const cleaned = (rawHandle || '').trim();
-  if (!cleaned) {
-    const localPart = (fallbackEmail.split('@')[0] || 'member').replace(/[^a-zA-Z0-9_]/g, '');
-    return `@${localPart || 'member'}`;
+  const currentBal = Number(state.wallet.usdBalance || 0);
+  if (currentBal < MIN_BASELINE_USD) {
+    state.wallet.usdBalance = MIN_BASELINE_USD;
   }
-  return cleaned.startsWith('@') ? cleaned : `@${cleaned}`;
+  if (Number(state.wallet.sgtTokens || 0) < MIN_BASELINE_USD) {
+    state.wallet.sgtTokens = MIN_BASELINE_USD;
+  }
+  if (Number(state.wallet.pendingRewards || 0) < MIN_BASELINE_USD) {
+    state.wallet.pendingRewards = MIN_BASELINE_USD;
+  }
+
+  if (elapsedMinutes > 0 && state.authenticated) {
+    const earnedUsd = elapsedMinutes * EARN_PER_MINUTE;
+    const earnedSgt = elapsedMinutes * SGT_PER_MINUTE;
+    state.wallet.usdBalance = Number((Number(state.wallet.usdBalance || 0) + earnedUsd).toFixed(4));
+    state.wallet.sgtTokens = Number((Number(state.wallet.sgtTokens || 0) + earnedSgt).toFixed(4));
+    state.wallet.pendingRewards = Number(
+      (Number(state.wallet.pendingRewards || 0) + earnedUsd).toFixed(4)
+    );
+  }
+
+  state.wallet.lastEarnedAt = now;
+  saveJson(STORAGE_KEYS.wallet, state.wallet);
 }
 
-function setStatus(el, message, isError = false) {
-  if (el) {
-    el.textContent = message;
-    el.style.color = isError ? '#ff6b6b' : '#4ade80';
-  } else if (message) {
-    console[isError ? 'error' : 'log'](message);
+function hydrateState() {
+  const session = loadJson(STORAGE_KEYS.session, null);
+  const savedProfile = loadJson(STORAGE_KEYS.profile, null);
+  const savedWallet = loadJson(STORAGE_KEYS.wallet, null);
+  const savedStatuses = loadJson(STORAGE_KEYS.statuses, []);
+  const savedFeed = loadJson(STORAGE_KEYS.feed, []);
+  const savedChats = loadJson(STORAGE_KEYS.chats, null);
+  const savedTheme = localStorage.getItem(STORAGE_KEYS.chatTheme) || "midnight";
+
+  state.authenticated = Boolean(session && session.signedIn);
+
+  const mergedName = savedProfile?.displayName;
+  const mergedHandle = savedProfile?.handle;
+  const normalizedName =
+    !mergedName || mergedName === "Member" ? "Scott" : mergedName;
+  const normalizedHandle =
+    !mergedHandle || mergedHandle === "@member" ? "@scott" : mergedHandle;
+
+  state.profile = {
+    ...DEFAULT_PROFILE,
+    ...(savedProfile || {}),
+    displayName: normalizedName,
+    handle: normalizedHandle,
+    email: session?.email || savedProfile?.email || "",
+  };
+
+  const now = Date.now();
+  const baseWallet = createDefaultWallet(now);
+  state.wallet = {
+    ...baseWallet,
+    ...(savedWallet || {}),
+    usdBalance: Math.max(MIN_BASELINE_USD, Number(savedWallet?.usdBalance ?? MIN_BASELINE_USD)),
+    sgtTokens: Math.max(MIN_BASELINE_USD, Number(savedWallet?.sgtTokens ?? MIN_BASELINE_USD)),
+    pendingRewards: Math.max(
+      MIN_BASELINE_USD,
+      Number(savedWallet?.pendingRewards ?? MIN_BASELINE_USD)
+    ),
+    lastEarnedAt: Number(savedWallet?.lastEarnedAt || now),
+  };
+
+  const dayAgo = now - 24 * 60 * 60 * 1000;
+  state.statuses = Array.isArray(savedStatuses)
+    ? savedStatuses.filter((item) => Number(item.createdAt || 0) >= dayAgo)
+    : [];
+
+  state.feed = Array.isArray(savedFeed) ? savedFeed : [];
+  state.chats = Array.isArray(savedChats) && savedChats.length ? savedChats : createDefaultChats();
+
+  const chatSection = document.getElementById("tab-chats");
+  const themeSelect = document.getElementById("chat-theme-select");
+  if (chatSection) chatSection.setAttribute("data-chat-theme", savedTheme);
+  if (themeSelect) themeSelect.value = savedTheme;
+
+  if (state.authenticated) {
+    syncWalletTicks(now);
   }
 }
 
-function getActiveThread() {
-  return state.threads.find((t) => t.id === state.activeThreadId) || state.threads[0];
+function setAuthState(signedIn, email = "") {
+  state.authenticated = signedIn;
+  if (email) {
+    state.profile.email = email;
+  }
+  saveJson(STORAGE_KEYS.session, {
+    signedIn,
+    email: state.profile.email || email || "",
+  });
+  saveJson(STORAGE_KEYS.profile, state.profile);
+  state.wallet.lastEarnedAt = Date.now();
+  saveJson(STORAGE_KEYS.wallet, state.wallet);
+  renderAll();
 }
 
-function getTotalUnreadCount() {
-  return state.threads.reduce((sum, t) => sum + (Number(t.unread) || 0), 0);
-}
+// --- NAVIGATION & TABS ---
+function switchTab(tabName) {
+  const validTabs = ["nearby", "chats", "status", "feed", "wallet", "me"];
+  if (!validTabs.includes(tabName)) return;
+  state.activeTab = tabName;
 
-function renderChatThreadList() {
-  if (!els.chatThreadList) return;
-
-  const q = (state.searchQuery || '').trim().toLowerCase();
-  const filtered = state.threads.filter((t) => {
-    if (state.chatFilter === 'unread' && !(t.unread > 0)) return false;
-    if (state.chatFilter === 'favorites' && !t.favorite) return false;
-    if (state.chatFilter === 'groups' && !t.isGroup) return false;
-    if (q) {
-      const hay = `${t.title} ${t.lastMessage}`.toLowerCase();
-      if (!hay.includes(q)) return false;
-    }
-    return true;
+  document.querySelectorAll(".sg-tab-pane").forEach((pane) => {
+    pane.style.display = pane.id === `tab-${tabName}` ? "block" : "none";
   });
 
-  if (!filtered.length) {
-    els.chatThreadList.innerHTML = `<div class="sg-empty-state" style="padding: 20px 8px;">No chats match this filter.</div>`;
-    return;
-  }
+  document.querySelectorAll(".sg-nav-btn").forEach((btn) => {
+    const isCurrent = btn.getAttribute("data-tab") === tabName;
+    btn.classList.toggle("is-active", isCurrent);
+    btn.classList.toggle("active", isCurrent);
+  });
 
-  els.chatThreadList.innerHTML = filtered
-    .map((thread) => {
-      const badgeHtml =
-        thread.unread > 0 ? `<span class="sg-wa-unread-badge">${escapeHtml(thread.unread)}</span>` : '';
-      return `
-        <button type="button" class="sg-wa-thread-row" data-thread-id="${escapeHtml(thread.id)}">
-          <div class="sg-wa-avatar">${escapeHtml(thread.avatar)}</div>
-          <div class="sg-wa-thread-meta">
-            <div class="sg-wa-thread-top">
-              <span class="sg-wa-name">${escapeHtml(thread.title)}</span>
-              <span class="sg-wa-time ${thread.unread > 0 ? 'is-unread' : ''}">${escapeHtml(thread.lastTime)}</span>
-            </div>
-            <div class="sg-wa-thread-bottom">
-              <span class="sg-wa-preview">${escapeHtml(thread.lastMessage)}</span>
-              ${badgeHtml}
-            </div>
-          </div>
-        </button>
-      `;
-    })
-    .join('');
+  if (tabName === "chats") {
+    renderChatsTab();
+  } else if (tabName === "status") {
+    renderStatusTab();
+  } else if (tabName === "feed") {
+    renderFeedTab();
+  } else if (tabName === "wallet") {
+    syncWalletTicks(Date.now());
+    renderWalletTab();
+  } else if (tabName === "me") {
+    renderMeTab();
+  }
 }
 
-function renderActiveThreadMessages() {
-  const thread = getActiveThread();
-  if (!thread || !els.chatMessagesBox) return;
-
-  if (els.chatActiveAvatar) els.chatActiveAvatar.textContent = thread.avatar;
-  if (els.chatActiveTitle) els.chatActiveTitle.textContent = thread.title;
-  if (els.chatPeerSub) els.chatPeerSub.textContent = thread.subtitle;
-  if (els.chatTotalUnread) els.chatTotalUnread.textContent = String(getTotalUnreadCount());
-
-  if (!thread.messages.length) {
-    els.chatMessagesBox.innerHTML = `
-      <div id="chats-empty" class="sg-empty-state" style="margin-top: 24px;">
-        No messages in this chat yet. Send a message or voice note below.
-      </div>
-    `;
+// --- RENDERERS ---
+function applyAvatarElement(el, initials, avatarDataUrl) {
+  if (!el) return;
+  if (el.tagName === "IMG") {
+    if (avatarDataUrl) {
+      el.src = avatarDataUrl;
+      el.style.display = "block";
+    } else {
+      el.removeAttribute("src");
+      el.style.display = "none";
+    }
     return;
   }
 
-  els.chatMessagesBox.innerHTML = thread.messages
-    .map((msg) => {
-      const onceTag = msg.viewOnce ? ' · 1x View Once' : '';
+  if (avatarDataUrl) {
+    el.innerHTML = `<img src="${escapeHtml(avatarDataUrl)}" alt="Avatar" style="width:100%;height:100%;border-radius:999px;object-fit:cover;display:block;" />`;
+  } else {
+    el.textContent = initials;
+  }
+}
+
+function renderHeaderAndNearby() {
+  const authView = document.getElementById("auth-view");
+  const appView = document.getElementById("app-view");
+
+  if (!state.authenticated) {
+    if (authView) authView.style.display = "flex";
+    if (appView) appView.style.display = "none";
+    return;
+  }
+
+  if (authView) authView.style.display = "none";
+  if (appView) appView.style.display = "block";
+
+  const labelSource = state.profile.displayName || state.profile.handle || "Scott";
+  const initials = getInitials(labelSource);
+  const avatarUrl = state.profile.avatarDataUrl || "";
+
+  applyAvatarElement(document.getElementById("radar-avatar"), initials, avatarUrl);
+  applyAvatarElement(document.getElementById("status-avatar"), initials, avatarUrl);
+  applyAvatarElement(document.getElementById("me-avatar"), initials, avatarUrl);
+  applyAvatarElement(document.getElementById("me-avatar-img"), initials, avatarUrl);
+
+  const meAvatarSpan = document.getElementById("me-avatar");
+  const meAvatarImg = document.getElementById("me-avatar-img");
+  if (meAvatarSpan && meAvatarImg) {
+    if (avatarUrl) {
+      meAvatarSpan.style.display = "none";
+      meAvatarImg.style.display = "block";
+      meAvatarImg.src = avatarUrl;
+    } else {
+      meAvatarImg.style.display = "none";
+      meAvatarSpan.style.display = "flex";
+      meAvatarSpan.textContent = initials;
+    }
+  }
+
+  const radarLabel = document.getElementById("radar-you-label");
+  if (radarLabel) {
+    radarLabel.textContent = state.profile.ghostMode ? "You (Ghost)" : "You";
+  }
+
+  const meshPill = document.getElementById("mesh-status-pill");
+  if (meshPill) {
+    meshPill.innerHTML = state.profile.ghostMode
+      ? `<span class="sg-dot"></span> Ghost Mode`
+      : `<span class="sg-dot"></span> Mesh Active`;
+  }
+
+  const nearbyCountPill = document.getElementById("nearby-count-pill");
+  if (nearbyCountPill) {
+    nearbyCountPill.textContent = "0 People Nearby";
+  }
+
+  const navName = document.getElementById("nav-display-name");
+  const navHandle = document.getElementById("nav-handle");
+  if (navName) navName.textContent = state.profile.displayName || "Scott";
+  if (navHandle) navHandle.textContent = state.profile.handle || "@scott";
+}
+
+function renderStatusTab() {
+  const strip = document.getElementById("status-circles-strip");
+  const emptyEl = document.getElementById("status-empty");
+  const itemsEl = document.getElementById("status-items");
+  if (!strip) return;
+
+  const initials = getInitials(state.profile.displayName || state.profile.handle || "Scott");
+  const avatarUrl = state.profile.avatarDataUrl || "";
+  const myAvatarInner = avatarUrl
+    ? `<img src="${escapeHtml(avatarUrl)}" alt="My story" class="sg-status-ring-avatar" />`
+    : `<div id="status-avatar" class="sg-status-ring-avatar">${escapeHtml(initials)}</div>`;
+
+  const myStoryItemHtml = `
+    <div class="sg-story-item sg-story-ring-item ${state.statuses.length ? "has-story" : ""}" id="my-story-trigger">
+      <div class="sg-status-mine">
+        ${myAvatarInner}
+        <button
+          id="add-status-btn"
+          type="button"
+          class="sg-status-plus"
+          title="Pick Photo or Video"
+          aria-label="Pick Photo or Video"
+        >+</button>
+      </div>
+      <span class="sg-story-label">My story</span>
+    </div>
+  `;
+
+  const ringsHtml = state.statuses
+    .map((st, idx) => {
+      const ringInitials = getInitials(st.author || "Scott");
       return `
-        <div class="sg-chat-bubble ${msg.outgoing ? 'is-outgoing' : ''}">
-          <div class="sg-chat-meta">
-            <strong>${escapeHtml(msg.sender)}</strong>
-            <span>${escapeHtml(msg.time)}${escapeHtml(onceTag)}</span>
+        <div class="sg-story-item sg-story-ring-item has-story" data-story-index="${idx}">
+          <div class="sg-status-mine">
+            <div class="sg-status-ring-avatar">${escapeHtml(ringInitials)}</div>
           </div>
-          <div class="sg-chat-body">${escapeHtml(msg.text)}</div>
+          <span class="sg-story-label">${escapeHtml(st.caption || st.author || "Status")}</span>
         </div>
       `;
     })
-    .join('');
+    .join("");
 
-  els.chatMessagesBox.scrollTop = els.chatMessagesBox.scrollHeight;
-}
+  strip.innerHTML = myStoryItemHtml + ringsHtml;
 
-function openChatThread(threadId) {
-  const thread = state.threads.find((t) => t.id === threadId);
-  if (!thread) return;
-
-  state.activeThreadId = thread.id;
-  thread.unread = 0;
-
-  if (els.chatListView) els.chatListView.style.display = 'none';
-  if (els.chatThreadView) els.chatThreadView.style.display = 'block';
-
-  renderChatThreadList();
-  renderActiveThreadMessages();
-}
-
-function showChatList() {
-  state.activeThreadId = null;
-  if (els.chatThreadView) els.chatThreadView.style.display = 'none';
-  if (els.chatListView) els.chatListView.style.display = 'block';
-  renderChatThreadList();
-}
-
-function syncComposerActionButton() {
-  const hasText = Boolean((els.chatTextInput?.value || '').trim());
-  const hasMedia = Boolean(els.chatMediaInput?.files && els.chatMediaInput.files.length > 0);
-  const showSend = hasText || hasMedia;
-
-  if (els.chatSendBtn) {
-    els.chatSendBtn.style.display = showSend ? 'inline-flex' : 'none';
-  }
-  if (els.recordVoiceBtn) {
-    els.recordVoiceBtn.style.display = showSend ? 'none' : 'inline-flex';
-  }
-}
-
-function pushMessageToActiveThread({ text, viewOnce = false }) {
-  const thread = getActiveThread();
-  if (!thread) return;
-
-  const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const sender = normalizeHandle(state.profile.handle, state.user?.email);
-
-  thread.messages.push({
-    sender,
-    text,
-    time: now,
-    viewOnce,
-    outgoing: true
-  });
-  thread.lastMessage = viewOnce ? '1x View Once' : text;
-  thread.lastTime = now;
-
-  renderActiveThreadMessages();
-  renderChatThreadList();
-}
-
-function handleChatSubmit(event) {
-  if (event) event.preventDefault();
-
-  const textVal = (els.chatTextInput?.value || '').trim();
-  const file = els.chatMediaInput?.files?.[0];
-  const viewOnce = Boolean(els.chatViewOnce?.checked);
-
-  if (!textVal && !file) return;
-
-  let composedText = textVal;
-  if (file) {
-    const mediaLabel = `[Media: ${file.name}]`;
-    composedText = composedText ? `${composedText} ${mediaLabel}` : mediaLabel;
-  }
-
-  pushMessageToActiveThread({ text: composedText, viewOnce });
-
-  if (els.chatTextInput) els.chatTextInput.value = '';
-  if (els.chatMediaInput) els.chatMediaInput.value = '';
-  if (els.chatViewOnce) els.chatViewOnce.checked = false;
-  syncComposerActionButton();
-}
-
-async function handleVoiceButtonClick() {
-  const viewOnce = Boolean(els.chatViewOnce?.checked);
-
-  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-    pushMessageToActiveThread({ text: '🎙 Voice message (0:02)', viewOnce });
-    if (els.chatViewOnce) els.chatViewOnce.checked = false;
-    return;
-  }
-
-  if (state.mediaRecorder && state.mediaRecorder.state === 'recording') {
-    state.mediaRecorder.stop();
-    els.recordVoiceBtn.textContent = '🎙';
-    return;
-  }
-
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    state.audioChunks = [];
-    const recorder = new MediaRecorder(stream);
-    state.mediaRecorder = recorder;
-
-    recorder.ondataavailable = (e) => {
-      if (e.data.size > 0) state.audioChunks.push(e.data);
-    };
-
-    recorder.onstop = () => {
-      stream.getTracks().forEach((t) => t.stop());
-      const seconds = Math.max(1, Math.round(state.audioChunks.length * 0.5));
-      pushMessageToActiveThread({
-        text: `🎙 Voice message (0:0${Math.min(9, seconds)})`,
-        viewOnce
-      });
-      if (els.chatViewOnce) els.chatViewOnce.checked = false;
-      state.mediaRecorder = null;
-    };
-
-    recorder.start();
-    els.recordVoiceBtn.textContent = '⏹';
-  } catch (_) {
-    pushMessageToActiveThread({ text: '🎙 Voice message (0:02)', viewOnce });
-    if (els.chatViewOnce) els.chatViewOnce.checked = false;
-  }
-}
-
-function applyChatTheme(themeName) {
-  const chosen = VALID_THEMES.includes(themeName) ? themeName : 'midnight';
-  state.chatTheme = chosen;
-
-  if (els.tabChats) {
-    els.tabChats.setAttribute('data-chat-theme', chosen);
-  }
-  if (els.chatThemeSelect && els.chatThemeSelect.value !== chosen) {
-    els.chatThemeSelect.value = chosen;
-  }
-
-  try {
-    localStorage.setItem('scottgrid_chat_theme', chosen);
-  } catch (_) {}
-}
-
-async function loadAndApplyUserTheme(user) {
-  const metaTheme = user?.user_metadata?.chat_theme;
-  let localTheme = null;
-  try {
-    localTheme = localStorage.getItem('scottgrid_chat_theme');
-  } catch (_) {}
-
-  applyChatTheme(metaTheme || localTheme || 'midnight');
-}
-
-function switchTab(tabName) {
-  els.tabButtons.forEach((btn) => {
-    btn.classList.toggle('active', btn.dataset.tab === tabName);
-    btn.classList.toggle('is-active', btn.dataset.tab === tabName);
+  const addBtn = document.getElementById("add-status-btn");
+  const mediaInput = document.getElementById("status-media-input");
+  addBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (!mediaInput) return;
+    mediaInput.value = "";
+    mediaInput.click();
   });
 
-  const panelById = document.getElementById(`tab-${tabName}`);
-  if (panelById) {
-    document.querySelectorAll('.sg-tab-pane').forEach((pane) => {
-      pane.style.display = pane === panelById ? 'block' : 'none';
-      pane.classList.toggle('active', pane === panelById);
-      pane.hidden = pane !== panelById;
+  document.getElementById("my-story-trigger")?.addEventListener("click", () => {
+    if (state.statuses.length > 0) {
+      openStoryModal(state.statuses[0]);
+    } else if (mediaInput) {
+      mediaInput.value = "";
+      mediaInput.click();
+    }
+  });
+
+  strip.querySelectorAll("[data-story-index]").forEach((el) => {
+    el.addEventListener("click", () => {
+      const idx = Number(el.getAttribute("data-story-index"));
+      if (state.statuses[idx]) openStoryModal(state.statuses[idx]);
     });
-    if (tabName === 'chats') {
-      showChatList();
-    }
-  }
-}
-
-function renderAuthState() {
-  const signedIn = Boolean(state.user);
-
-  if (appView) {
-    appView.style.display = signedIn ? 'block' : 'none';
-    appView.hidden = !signedIn;
-  }
-  if (authView) {
-    authView.style.display = signedIn ? 'none' : 'flex';
-    authView.hidden = signedIn;
-  }
-
-  if (els.authBanner) {
-    if (signedIn) {
-      const displayHandle = normalizeHandle(state.profile.handle, state.user.email);
-      els.authBanner.textContent = `Connected as ${displayHandle} (${state.user.email || 'Authenticated'})`;
-    } else {
-      els.authBanner.textContent = 'Sign in to enter ScottGrid';
-    }
-  }
-
-  if (els.googleSignInBtn) els.googleSignInBtn.hidden = signedIn;
-  if (els.signOutBtn) els.signOutBtn.hidden = !signedIn;
-}
-
-function renderProfile() {
-  const displayName = state.profile.display_name || 'ScottGrid Member';
-  const handle = normalizeHandle(state.profile.handle, state.user?.email);
-  const bio = state.profile.bio || '';
-
-  if (els.profileBadgeName) els.profileBadgeName.textContent = displayName;
-  if (els.profileBadgeHandle) els.profileBadgeHandle.textContent = handle;
-  if (els.profileBadgeBio) {
-    els.profileBadgeBio.textContent = bio ? `${displayName} · ${bio}` : displayName;
-  }
-
-  if (els.handleInput && document.activeElement !== els.handleInput) {
-    els.handleInput.value = handle;
-  }
-  if (els.displayNameInput && document.activeElement !== els.displayNameInput) {
-    els.displayNameInput.value = displayName;
-  }
-  if (els.bioInput && document.activeElement !== els.bioInput) {
-    els.bioInput.value = bio;
-  }
-}
-
-async function loadProfile(user) {
-  if (!user) {
-    state.profile = {
-      id: null,
-      display_name: 'ScottGrid Member',
-      handle: '@member',
-      bio: ''
-    };
-    renderProfile();
-    renderAuthState();
-    return;
-  }
-
-  const fallbackHandle = normalizeHandle(
-    user.user_metadata?.user_name || user.user_metadata?.name,
-    user.email
-  );
-  const fallbackName =
-    user.user_metadata?.full_name ||
-    user.user_metadata?.name ||
-    fallbackHandle.replace(/^@/, '');
-
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('id, display_name, handle, bio')
-    .eq('id', user.id)
-    .maybeSingle();
-
-  if (error) {
-    console.error('Error loading profile:', error.message);
-    state.profile = {
-      id: user.id,
-      display_name: fallbackName,
-      handle: fallbackHandle,
-      bio: ''
-    };
-    renderProfile();
-    renderAuthState();
-    return;
-  }
-
-  state.profile = data
-    ? {
-        id: data.id,
-        display_name: data.display_name || fallbackName,
-        handle: normalizeHandle(data.handle, user.email),
-        bio: data.bio || ''
-      }
-    : {
-        id: user.id,
-        display_name: fallbackName,
-        handle: fallbackHandle,
-        bio: ''
-      };
-
-  renderProfile();
-  renderAuthState();
-}
-
-async function saveProfile(event) {
-  if (event) event.preventDefault();
-  if (!state.user) {
-    setStatus(els.profileStatus, 'Please sign in first before saving your profile.', true);
-    return;
-  }
-
-  const handle = normalizeHandle(els.handleInput?.value, state.user.email);
-  const display_name = (els.displayNameInput?.value || '').trim() || handle.replace(/^@/, '');
-  const bio = (els.bioInput?.value || '').trim();
-
-  setStatus(els.profileStatus, 'Saving...');
-
-  const { data, error } = await supabase
-    .from('profiles')
-    .upsert(
-      {
-        id: state.user.id,
-        display_name,
-        handle,
-        bio
-      },
-      { onConflict: 'id' }
-    )
-    .select('id, display_name, handle, bio')
-    .single();
-
-  if (error) {
-    console.error('Profile save error:', error.message);
-    setStatus(els.profileStatus, `Could not save: ${error.message}`, true);
-    return;
-  }
-
-  state.profile = {
-    id: data.id,
-    display_name: data.display_name || display_name,
-    handle: normalizeHandle(data.handle, state.user.email),
-    bio: data.bio || ''
-  };
-
-  renderProfile();
-  renderAuthState();
-  setStatus(els.profileStatus, 'Saved!');
-}
-
-async function handleSignIn(event) {
-  if (event) event.preventDefault();
-
-  const email = (emailInput?.value || '').trim();
-  const password = passwordInput?.value || '';
-
-  if (!email || !password) {
-    setStatus(els.authBanner, 'Enter both your email and password.', true);
-    return;
-  }
-
-  if (signInBtn) signInBtn.disabled = true;
-  setStatus(els.authBanner, 'Entering ScottGrid...');
-
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email,
-    password
   });
 
-  if (signInBtn) signInBtn.disabled = false;
+  if (!emptyEl || !itemsEl) return;
 
-  if (error) {
-    console.error('Sign in failed:', error.message);
-    setStatus(els.authBanner, `Sign in failed: ${error.message}`, true);
-    return;
-  }
-
-  state.user = data.user || data.session?.user || null;
-  await loadAndApplyUserTheme(state.user);
-  await loadProfile(state.user);
-  await loadFeedPosts();
-  subscribeToLiveFeed();
-}
-
-async function handleSignUp(event) {
-  if (event) event.preventDefault();
-
-  const email = (emailInput?.value || '').trim();
-  const password = passwordInput?.value || '';
-
-  if (!email || !password) {
-    setStatus(els.authBanner, 'Enter an email and password to create an account.', true);
-    return;
-  }
-
-  if (signUpBtn) signUpBtn.disabled = true;
-  setStatus(els.authBanner, 'Creating account...');
-
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password
+  const filtered = state.statuses.filter((s) => {
+    if (!state.searchQuery) return true;
+    const q = state.searchQuery.toLowerCase();
+    return (
+      String(s.caption || "").toLowerCase().includes(q) ||
+      String(s.author || "").toLowerCase().includes(q)
+    );
   });
 
-  if (signUpBtn) signUpBtn.disabled = false;
-
-  if (error) {
-    console.error('Sign up failed:', error.message);
-    setStatus(els.authBanner, `Sign up failed: ${error.message}`, true);
+  if (filtered.length === 0) {
+    emptyEl.style.display = "block";
+    itemsEl.innerHTML = "";
     return;
   }
 
-  if (data.session?.user) {
-    state.user = data.session.user;
-    await loadAndApplyUserTheme(state.user);
-    await loadProfile(state.user);
-    await loadFeedPosts();
-    subscribeToLiveFeed();
-  } else {
-    setStatus(els.authBanner, 'Account created! Check your email or click Enter ScottGrid.');
-  }
-}
-
-function getVisiblePosts() {
-  if (!state.selectedBand || state.selectedBand === 'ALL') {
-    return state.posts;
-  }
-  return state.posts.filter(
-    (post) => (post.band || '').toLowerCase() === state.selectedBand.toLowerCase()
-  );
-}
-
-function formatTimestamp(isoString) {
-  if (!isoString) return 'Just now';
-  const date = new Date(isoString);
-  if (Number.isNaN(date.getTime())) return 'Just now';
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
-function renderFeed() {
-  if (!els.feedList) return;
-
-  const visiblePosts = getVisiblePosts();
-
-  if (!visiblePosts.length) {
-    const scopeText =
-      state.selectedBand && state.selectedBand !== 'ALL'
-        ? ` on frequency "${state.selectedBand}"`
-        : '';
-    if (els.feedEmpty) els.feedEmpty.style.display = 'block';
-    els.feedList.innerHTML = `<div class="feed-empty">No Feed posts yet${escapeHtml(scopeText)}. Broadcast the first update above.</div>`;
-    return;
-  }
-
-  if (els.feedEmpty) els.feedEmpty.style.display = 'none';
-
-  els.feedList.innerHTML = visiblePosts
-    .map((post) => {
-      const replies = Array.isArray(post.replies) ? post.replies : [];
-      const boostCount = Number.isFinite(Number(post.boosts)) ? Number(post.boosts) : 0;
-
-      const repliesHtml = replies.length
-        ? `<div class="feed-replies">
-            ${replies
-              .map(
-                (r) => `
-              <div class="feed-reply-item">
-                <strong>${escapeHtml(r.author_handle || '@member')}</strong>: ${escapeHtml(r.text || '')}
-              </div>`
-              )
-              .join('')}
-          </div>`
-        : '';
-
+  emptyEl.style.display = "none";
+  itemsEl.innerHTML = filtered
+    .map((st) => {
+      const mediaHtml =
+        st.mediaType === "video"
+          ? `<video src="${escapeHtml(st.mediaUrl)}" class="sg-story-preview-media sg-mt-10" controls playsinline></video>`
+          : st.mediaUrl
+          ? `<img src="${escapeHtml(st.mediaUrl)}" alt="Status" class="sg-story-preview-media sg-mt-10" />`
+          : "";
       return `
-        <article class="feed-card" data-post-id="${escapeHtml(post.id)}">
-          <div class="feed-card-header">
-            <span class="feed-author">${escapeHtml(post.author_handle || '@member')}</span>
-            <span class="feed-band">${escapeHtml(post.band || 'General')}</span>
-            <span class="feed-time">${escapeHtml(formatTimestamp(post.created_at))}</span>
+        <article class="sg-feed-card">
+          <div class="sg-chat-meta">
+            <strong>${escapeHtml(st.author || "Scott")}</strong>
+            <span>${escapeHtml(st.timeLabel || "Just now")}</span>
           </div>
-          <p class="feed-text">${escapeHtml(post.text || '')}</p>
-          <div class="feed-actions">
-            <button type="button" class="btn-boost" data-action="boost" data-id="${escapeHtml(post.id)}">
-              ⚡ Boost (${boostCount})
-            </button>
-            <button type="button" class="btn-reply-toggle" data-action="toggle-reply" data-id="${escapeHtml(post.id)}">
-              💬 Reply (${replies.length})
-            </button>
-          </div>
-          <form class="feed-reply-form" data-reply-form="${escapeHtml(post.id)}" hidden>
-            <input type="text" name="replyText" placeholder="Write a reply on this frequency..." maxlength="280" required />
-            <button type="submit">Send</button>
-          </form>
-          ${repliesHtml}
+          ${mediaHtml}
+          ${st.caption ? `<p class="sg-token-sub sg-mt-10">${escapeHtml(st.caption)}</p>` : ""}
         </article>
       `;
     })
-    .join('');
+    .join("");
 }
 
-async function loadFeedPosts() {
-  const { data, error } = await supabase
-    .from('pulses')
-    .select('id, author_id, author_handle, band, text, boosts, replies, created_at')
-    .order('created_at', { ascending: false })
-    .limit(100);
+function openStoryModal(story) {
+  const modal = document.getElementById("story-modal");
+  const authorEl = document.getElementById("story-viewer-author");
+  const bodyEl = document.getElementById("story-viewer-body");
+  if (!modal || !authorEl || !bodyEl) return;
 
-  if (error) {
-    console.error('Failed to load Feed:', error.message);
-    setStatus(els.feedStatus, `Feed load error: ${error.message}`, true);
-    return;
-  }
+  authorEl.textContent = story.author || "My status";
+  const mediaHtml =
+    story.mediaType === "video"
+      ? `<video src="${escapeHtml(story.mediaUrl)}" class="sg-story-preview-media" controls autoplay playsinline></video>`
+      : story.mediaUrl
+      ? `<img src="${escapeHtml(story.mediaUrl)}" alt="Story" class="sg-story-preview-media" />`
+      : "";
 
-  state.posts = Array.isArray(data) ? data : [];
-  renderFeed();
+  bodyEl.innerHTML = `
+    ${mediaHtml}
+    ${story.caption ? `<p class="sg-mt-10">${escapeHtml(story.caption)}</p>` : ""}
+    <p class="sg-muted-caption sg-mt-10">${escapeHtml(story.timeLabel || "Active 24h status")}</p>
+  `;
+  modal.style.display = "flex";
 }
 
-function upsertLocalPost(incomingPost) {
-  if (!incomingPost || !incomingPost.id) return;
-  const idx = state.posts.findIndex((p) => String(p.id) === String(incomingPost.id));
-  if (idx >= 0) {
-    state.posts[idx] = { ...state.posts[idx], ...incomingPost };
-  } else {
-    state.posts = [incomingPost, ...state.posts];
-  }
-  state.posts.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
-  renderFeed();
+function closeStoryModal() {
+  const modal = document.getElementById("story-modal");
+  if (modal) modal.style.display = "none";
 }
 
-function removeLocalPost(postId) {
-  state.posts = state.posts.filter((p) => String(p.id) !== String(postId));
-  renderFeed();
+// --- CHATS & CALLS ---
+function getTotalUnread() {
+  return state.chats.reduce((sum, t) => sum + Number(t.unread || 0), 0);
 }
 
-async function handleCreateFeedPost(event) {
-  if (event) event.preventDefault();
-  if (!state.user) {
-    setStatus(els.feedStatus, 'Sign in first to post to the Feed.', true);
-    return;
+function renderChatsTab() {
+  const listView = document.getElementById("chat-list-view");
+  const threadView = document.getElementById("chat-thread-view");
+  const threadListEl = document.getElementById("chat-thread-list");
+  const totalUnreadEl = document.getElementById("chat-total-unread");
+  if (!listView || !threadView) return;
+
+  if (totalUnreadEl) {
+    totalUnreadEl.textContent = String(getTotalUnread());
   }
 
-  const text = (els.feedTextInput?.value || '').trim();
-  const band = (els.feedBandInput?.value || state.selectedBand || 'General').trim() || 'General';
+  if (!state.activeChatId) {
+    listView.style.display = "block";
+    threadView.style.display = "none";
 
-  if (!text) {
-    setStatus(els.feedStatus, 'Enter a message before posting to the Feed.', true);
-    return;
-  }
-
-  const author_handle = normalizeHandle(state.profile.handle, state.user.email);
-  setStatus(els.feedStatus, `Broadcasting on ${band}...`);
-
-  const { data, error } = await supabase
-    .from('pulses')
-    .insert({
-      author_id: state.user.id,
-      author_handle,
-      band,
-      text,
-      boosts: 0,
-      replies: []
-    })
-    .select('id, author_id, author_handle, band, text, boosts, replies, created_at')
-    .single();
-
-  if (error) {
-    console.error('Error posting to Feed:', error.message);
-    setStatus(els.feedStatus, `Post failed: ${error.message}`, true);
-    return;
-  }
-
-  if (data) {
-    upsertLocalPost(data);
-  }
-
-  if (els.feedTextInput) els.feedTextInput.value = '';
-  setStatus(els.feedStatus, `Live on ${band}`);
-}
-
-async function handleBoostPost(postId) {
-  if (!state.user) {
-    setStatus(els.feedStatus, 'Sign in to boost Feed posts.', true);
-    return;
-  }
-
-  const target = state.posts.find((p) => String(p.id) === String(postId));
-  if (!target) return;
-
-  const nextBoosts = (Number(target.boosts) || 0) + 1;
-  upsertLocalPost({ ...target, boosts: nextBoosts });
-
-  const { data, error } = await supabase
-    .from('pulses')
-    .update({ boosts: nextBoosts })
-    .eq('id', postId)
-    .select('id, author_id, author_handle, band, text, boosts, replies, created_at')
-    .single();
-
-  if (error) {
-    console.error('Error boosting post:', error.message);
-    upsertLocalPost(target);
-    setStatus(els.feedStatus, `Boost failed: ${error.message}`, true);
-    return;
-  }
-
-  if (data) upsertLocalPost(data);
-}
-
-async function handleReplySubmit(postId, replyText, formEl) {
-  if (!state.user) {
-    setStatus(els.feedStatus, 'Sign in to reply on the Feed.', true);
-    return;
-  }
-
-  const cleanReply = (replyText || '').trim();
-  if (!cleanReply) return;
-
-  const target = state.posts.find((p) => String(p.id) === String(postId));
-  if (!target) return;
-
-  const existingReplies = Array.isArray(target.replies) ? target.replies : [];
-  const nextReplies = [
-    ...existingReplies,
-    {
-      author_id: state.user.id,
-      author_handle: normalizeHandle(state.profile.handle, state.user.email),
-      text: cleanReply,
-      created_at: new Date().toISOString()
-    }
-  ];
-
-  const { data, error } = await supabase
-    .from('pulses')
-    .update({ replies: nextReplies })
-    .eq('id', postId)
-    .select('id, author_id, author_handle, band, text, boosts, replies, created_at')
-    .single();
-
-  if (error) {
-    console.error('Error sending reply:', error.message);
-    setStatus(els.feedStatus, `Reply failed: ${error.message}`, true);
-    return;
-  }
-
-  if (data) upsertLocalPost(data);
-  if (formEl) {
-    formEl.reset();
-    formEl.hidden = true;
-  }
-}
-
-function subscribeToLiveFeed() {
-  if (state.feedChannel) {
-    supabase.removeChannel(state.feedChannel);
-    state.feedChannel = null;
-  }
-
-  state.feedChannel = supabase
-    .channel('scottgrid-feed-realtime')
-    .on(
-      'postgres_changes',
-      { event: 'INSERT', schema: 'public', table: 'pulses' },
-      (payload) => {
-        if (payload?.new) upsertLocalPost(payload.new);
+    const filteredThreads = state.chats.filter((t) => {
+      if (state.chatFilter === "unread" && Number(t.unread || 0) <= 0) return false;
+      if (state.chatFilter === "favorites" && !t.favorite) return false;
+      if (state.chatFilter === "groups" && !t.isGroup) return false;
+      if (state.searchQuery) {
+        const q = state.searchQuery.toLowerCase();
+        const lastMsg = t.messages?.[t.messages.length - 1]?.text || "";
+        return (
+          t.name.toLowerCase().includes(q) || lastMsg.toLowerCase().includes(q)
+        );
       }
-    )
-    .on(
-      'postgres_changes',
-      { event: 'UPDATE', schema: 'public', table: 'pulses' },
-      (payload) => {
-        if (payload?.new) upsertLocalPost(payload.new);
-      }
-    )
-    .on(
-      'postgres_changes',
-      { event: 'DELETE', schema: 'public', table: 'pulses' },
-      (payload) => {
-        if (payload?.old?.id) removeLocalPost(payload.old.id);
-      }
-    )
-    .subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        setStatus(els.feedStatus, 'Live frequency connected');
-      }
+      return true;
     });
-}
 
-function setSelectedBand(bandValue) {
-  state.selectedBand = bandValue || 'ALL';
+    if (threadListEl) {
+      threadListEl.innerHTML = filteredThreads
+        .map((t) => {
+          const lastMsg = t.messages?.[t.messages.length - 1];
+          const preview = lastMsg ? lastMsg.text : "Tap to start chatting";
+          const hasUnread = Number(t.unread || 0) > 0;
+          return `
+            <button type="button" class="sg-wa-thread-row" data-open-thread="${escapeHtml(t.id)}">
+              <div class="sg-wa-avatar">${escapeHtml(t.avatar || getInitials(t.name))}</div>
+              <div class="sg-wa-thread-meta">
+                <div class="sg-wa-thread-top">
+                  <span class="sg-wa-name">${escapeHtml(t.name)}</span>
+                  <span class="sg-wa-time ${hasUnread ? "is-unread" : ""}">${escapeHtml(t.lastTime || "")}</span>
+                </div>
+                <div class="sg-wa-thread-bottom">
+                  <span class="sg-wa-preview">${escapeHtml(preview)}</span>
+                  ${hasUnread ? `<span class="sg-wa-unread-badge">${escapeHtml(t.unread)}</span>` : ""}
+                </div>
+              </div>
+            </button>
+          `;
+        })
+        .join("");
 
-  if (els.bandFilterSelect && els.bandFilterSelect.value !== state.selectedBand) {
-    els.bandFilterSelect.value = state.selectedBand;
-  }
-
-  if (
-    els.feedBandInput &&
-    state.selectedBand !== 'ALL' &&
-    Array.from(els.feedBandInput.options).some((opt) => opt.value === state.selectedBand)
-  ) {
-    els.feedBandInput.value = state.selectedBand;
-  }
-
-  els.bandChips.forEach((chip) => {
-    chip.classList.toggle('active', chip.dataset.band === state.selectedBand);
-  });
-
-  renderFeed();
-}
-
-function bindEvents() {
-  els.tabButtons.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const targetTab = btn.dataset.tab;
-      switchTab(targetTab);
-      if (targetTab === 'feed') {
-        loadFeedPosts();
-      }
-    });
-  });
-
-  els.searchInput?.addEventListener('input', (e) => {
-    state.searchQuery = e.target.value || '';
-    renderChatThreadList();
-  });
-
-  els.chatFilterPills.forEach((pill) => {
-    pill.addEventListener('click', () => {
-      state.chatFilter = pill.dataset.chatFilter || 'all';
-      els.chatFilterPills.forEach((p) => p.classList.toggle('is-active', p === pill));
-      renderChatThreadList();
-    });
-  });
-
-  els.chatThreadList?.addEventListener('click', (e) => {
-    const row = e.target.closest('[data-thread-id]');
-    if (!row) return;
-    openChatThread(row.dataset.threadId);
-  });
-
-  els.chatBackBtn?.addEventListener('click', showChatList);
-
-  els.chatTextInput?.addEventListener('input', syncComposerActionButton);
-  els.chatMediaInput?.addEventListener('change', syncComposerActionButton);
-  els.chatComposerForm?.addEventListener('submit', handleChatSubmit);
-  els.recordVoiceBtn?.addEventListener('click', handleVoiceButtonClick);
-
-  els.chatThemeSelect?.addEventListener('change', async (e) => {
-    const chosen = e.target.value;
-    applyChatTheme(chosen);
-
-    if (state.user) {
-      const { error } = await supabase.auth.updateUser({
-        data: { chat_theme: chosen }
+      threadListEl.querySelectorAll("[data-open-thread]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          openChatThread(btn.getAttribute("data-open-thread"));
+        });
       });
-      if (error) {
-        console.error('Could not sync chat theme:', error.message);
-      }
     }
+    return;
+  }
+
+  const thread = state.chats.find((t) => t.id === state.activeChatId);
+  if (!thread) {
+    state.activeChatId = null;
+    renderChatsTab();
+    return;
+  }
+
+  listView.style.display = "none";
+  threadView.style.display = "block";
+
+  const avatarEl = document.getElementById("chat-active-avatar");
+  const titleEl = document.getElementById("chat-active-title");
+  const subEl = document.getElementById("chat-peer-sub");
+  const messagesBox = document.getElementById("chat-messages-box");
+
+  if (avatarEl) avatarEl.textContent = thread.avatar || getInitials(thread.name);
+  if (titleEl) titleEl.textContent = thread.name;
+  if (subEl) subEl.textContent = thread.subtitle || "Encrypted mesh";
+
+  if (messagesBox) {
+    if (!thread.messages || thread.messages.length === 0) {
+      messagesBox.innerHTML = `<div id="chats-empty" class="sg-empty-state sg-mt-24">No messages in this chat yet.</div>`;
+    } else {
+      messagesBox.innerHTML = thread.messages
+        .map((m) => {
+          const mediaPart = m.mediaUrl
+            ? m.mediaType === "video"
+              ? `<video src="${escapeHtml(m.mediaUrl)}" class="sg-story-preview-media sg-mt-10" controls playsinline></video>`
+              : `<img src="${escapeHtml(m.mediaUrl)}" alt="Attachment" class="sg-story-preview-media sg-mt-10" />`
+            : "";
+          const audioPart = m.audioUrl
+            ? `<audio src="${escapeHtml(m.audioUrl)}" controls class="sg-mt-10" style="width:100%;max-height:32px;"></audio>`
+            : "";
+          return `
+            <div class="sg-chat-bubble ${m.outgoing ? "is-outgoing" : ""}">
+              <div class="sg-chat-meta">
+                <strong>${escapeHtml(m.sender || "You")}</strong>
+                <span>${escapeHtml(m.time || "")}${m.viewOnce ? " · 1x" : ""}</span>
+              </div>
+              ${m.text ? `<div>${escapeHtml(m.text)}</div>` : ""}
+              ${mediaPart}
+              ${audioPart}
+            </div>
+          `;
+        })
+        .join("");
+      messagesBox.scrollTop = messagesBox.scrollHeight;
+    }
+  }
+}
+
+function openChatThread(threadId) {
+  const thread = state.chats.find((t) => t.id === threadId);
+  if (!thread) return;
+  thread.unread = 0;
+  state.activeChatId = threadId;
+  saveJson(STORAGE_KEYS.chats, state.chats);
+  renderChatsTab();
+}
+
+function syncComposerActionButtons() {
+  const input = document.getElementById("chat-text-input");
+  const voiceBtn = document.getElementById("record-voice-btn");
+  const sendBtn = document.getElementById("chat-send-btn");
+  const hasContent = Boolean((input?.value || "").trim() || state.pendingChatMedia);
+
+  if (voiceBtn) voiceBtn.style.display = hasContent ? "none" : "inline-flex";
+  if (sendBtn) sendBtn.style.display = hasContent ? "inline-flex" : "none";
+}
+
+async function openCallModal(mode) {
+  const modal = document.getElementById("call-modal");
+  const titleEl = document.getElementById("call-modal-title");
+  const placeholderEl = document.getElementById("call-placeholder");
+  const videoEl = document.getElementById("local-call-video");
+  if (!modal) return;
+
+  modal.style.display = "flex";
+  if (titleEl) {
+    titleEl.textContent = mode === "video" ? "Grid Video Call" : "Grid Voice Call";
+  }
+
+  stopCallStream();
+
+  try {
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: mode === "video",
+      });
+      state.callStream = stream;
+      state.micEnabled = true;
+      state.camEnabled = mode === "video";
+      if (videoEl) {
+        videoEl.srcObject = stream;
+        videoEl.style.display = mode === "video" ? "block" : "none";
+      }
+      if (placeholderEl) {
+        placeholderEl.style.display = mode === "video" ? "none" : "block";
+        placeholderEl.textContent = "Voice call connected.";
+      }
+    } else if (placeholderEl) {
+      placeholderEl.textContent = "Call room active.";
+    }
+  } catch {
+    if (placeholderEl) {
+      placeholderEl.style.display = "block";
+      placeholderEl.textContent = "Call connected (camera/mic unavailable or denied).";
+    }
+  }
+}
+
+function stopCallStream() {
+  if (state.callStream) {
+    state.callStream.getTracks().forEach((track) => track.stop());
+    state.callStream = null;
+  }
+  const videoEl = document.getElementById("local-call-video");
+  if (videoEl) videoEl.srcObject = null;
+}
+
+function closeCallModal() {
+  stopCallStream();
+  const modal = document.getElementById("call-modal");
+  if (modal) modal.style.display = "none";
+}
+
+// --- FEED ---
+function renderFeedTab() {
+  const emptyEl = document.getElementById("feed-empty");
+  const itemsEl = document.getElementById("feed-items");
+  if (!emptyEl || !itemsEl) return;
+
+  const filtered = state.feed.filter((item) => {
+    if (!state.searchQuery) return true;
+    const q = state.searchQuery.toLowerCase();
+    return (
+      String(item.text || "").toLowerCase().includes(q) ||
+      String(item.author || "").toLowerCase().includes(q)
+    );
   });
 
-  signInBtn?.addEventListener('click', handleSignIn);
-  signUpBtn?.addEventListener('click', handleSignUp);
+  if (filtered.length === 0) {
+    emptyEl.style.display = "block";
+    itemsEl.innerHTML = "";
+    return;
+  }
 
-  passwordInput?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      handleSignIn(e);
+  emptyEl.style.display = "none";
+  itemsEl.innerHTML = filtered
+    .map((item) => {
+      const mediaHtml =
+        item.mediaType === "video"
+          ? `<video src="${escapeHtml(item.mediaUrl)}" class="sg-story-preview-media sg-mt-10" controls playsinline></video>`
+          : item.mediaUrl
+          ? `<img src="${escapeHtml(item.mediaUrl)}" alt="Pulse media" class="sg-story-preview-media sg-mt-10" />`
+          : "";
+      return `
+        <article class="sg-feed-card">
+          <div class="sg-chat-meta">
+            <strong>${escapeHtml(item.author || "Scott")}</strong>
+            <span>${escapeHtml(item.timeLabel || "Just now")}</span>
+          </div>
+          ${item.text ? `<p class="sg-token-sub sg-mt-10" style="color:var(--sg-text);">${escapeHtml(item.text)}</p>` : ""}
+          ${mediaHtml}
+        </article>
+      `;
+    })
+    .join("");
+}
+
+// --- WALLET & PAYOUTS ---
+function renderWalletTab() {
+  const currency = state.profile.displayCurrency || "USD";
+  const badge = document.getElementById("wallet-currency-badge");
+  const balanceText = document.getElementById("wallet-balance-text");
+  const tokenLine = document.getElementById("wallet-token-line");
+  const activityEmpty = document.getElementById("wallet-activity-empty");
+  const activityList = document.getElementById("wallet-activity-list");
+
+  const activeUsd = Math.max(MIN_BASELINE_USD, Number(state.wallet.usdBalance || MIN_BASELINE_USD));
+
+  if (badge) badge.textContent = currency;
+  if (balanceText) balanceText.textContent = formatMoney(activeUsd, currency);
+  if (tokenLine) {
+    const sgtFormatted = Math.max(MIN_BASELINE_USD, Number(state.wallet.sgtTokens || activeUsd)).toFixed(2);
+    const pendingFormatted = Math.max(
+      MIN_BASELINE_USD,
+      Number(state.wallet.pendingRewards || activeUsd)
+    ).toFixed(2);
+    tokenLine.innerHTML = `${sgtFormatted} SGT tokens · <span id="wallet-rewards-text">${pendingFormatted}</span> pending rewards · +$0.50/min live`;
+  }
+
+  const txList = Array.isArray(state.wallet.transactions) ? state.wallet.transactions : [];
+  if (activityEmpty && activityList) {
+    if (txList.length === 0) {
+      activityEmpty.style.display = "block";
+      activityList.innerHTML = "";
+    } else {
+      activityEmpty.style.display = "none";
+      activityList.innerHTML = txList
+        .map(
+          (tx) => `
+            <div class="sg-panel-card sg-mt-10">
+              <div class="sg-chat-meta">
+                <strong>${escapeHtml(tx.label || "Activity")}</strong>
+                <span>${escapeHtml(tx.timeLabel || "Just now")}</span>
+              </div>
+              <div class="sg-token-sub">${escapeHtml(tx.detail || "")}</div>
+            </div>
+          `
+        )
+        .join("");
     }
-  });
+  }
+}
 
-  els.googleSignInBtn?.addEventListener('click', async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: window.location.origin
-      }
+async function submitWithdrawalToApi(payload) {
+  try {
+    const res = await fetch("/api/payouts/withdraw", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
     });
-    if (error) {
-      console.error('Google sign-in error:', error.message);
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+    const data = await res.json().catch(() => ({}));
+    return { ok: true, data };
+  } catch {
+    return { ok: false, error: "Network/API route unavailable" };
+  }
+}
+
+// --- ME / PROFILE ---
+function renderMeTab() {
+  const handleHeading = document.getElementById("me-handle-heading");
+  const subtitleEl = document.getElementById("me-subtitle");
+  const handleInput = document.getElementById("handle");
+  const nameInput = document.getElementById("display-name");
+  const bioInput = document.getElementById("bio");
+  const ghostInput = document.getElementById("ghost-mode");
+  const currencySelect = document.getElementById("display-currency");
+
+  const cleanHandle = state.profile.handle
+    ? state.profile.handle.startsWith("@")
+      ? state.profile.handle
+      : `@${state.profile.handle}`
+    : "@scott";
+
+  if (handleHeading) handleHeading.textContent = cleanHandle;
+  if (subtitleEl) {
+    subtitleEl.textContent = state.profile.displayName
+      ? `${state.profile.displayName} · ScottGrid Member`
+      : "ScottGrid Member";
+  }
+  if (handleInput) handleInput.value = cleanHandle;
+  if (nameInput) nameInput.value = state.profile.displayName || "Scott";
+  if (bioInput) bioInput.value = state.profile.bio || "";
+  if (ghostInput) ghostInput.checked = Boolean(state.profile.ghostMode);
+  if (currencySelect) currencySelect.value = state.profile.displayCurrency || "USD";
+}
+
+function renderAll() {
+  renderHeaderAndNearby();
+  renderStatusTab();
+  renderChatsTab();
+  renderFeedTab();
+  renderWalletTab();
+  renderMeTab();
+  switchTab(state.activeTab);
+}
+
+// --- EVENT WIRING ---
+function bindEvents() {
+  const statusNote = document.getElementById("auth-status");
+  const emailInput = document.getElementById("email");
+  const passInput = document.getElementById("password");
+
+  document.getElementById("sign-in-btn")?.addEventListener("click", () => {
+    const email = (emailInput?.value || "").trim();
+    if (!email) {
+      if (statusNote) statusNote.textContent = "Enter your email to sign in.";
+      return;
     }
+    setAuthState(true, email);
   });
 
-  els.signOutBtn?.addEventListener('click', async () => {
-    await supabase.auth.signOut();
+  document.getElementById("sign-up-btn")?.addEventListener("click", () => {
+    const email = (emailInput?.value || "").trim();
+    if (!email) {
+      if (statusNote) statusNote.textContent = "Enter an email to create your account.";
+      return;
+    }
+    setAuthState(true, email);
   });
 
-  els.profileForm?.addEventListener('submit', saveProfile);
-  els.saveProfileBtn?.addEventListener('click', saveProfile);
-
-  els.feedForm?.addEventListener('submit', handleCreateFeedPost);
-  els.feedPublishBtn?.addEventListener('click', handleCreateFeedPost);
-
-  els.bandFilterSelect?.addEventListener('change', (e) => {
-    setSelectedBand(e.target.value);
+  document.getElementById("google-signin-btn")?.addEventListener("click", () => {
+    const email = (emailInput?.value || "scott@scottgrid.app").trim();
+    setAuthState(true, email);
   });
 
-  els.bandChips.forEach((chip) => {
-    chip.addEventListener('click', () => {
-      setSelectedBand(chip.dataset.band);
+  document.getElementById("top-bell-btn")?.addEventListener("click", () => switchTab("feed"));
+  document.getElementById("top-grid-btn")?.addEventListener("click", () => switchTab("nearby"));
+  document.getElementById("top-compose-btn")?.addEventListener("click", () => switchTab("chats"));
+
+  document.getElementById("sg-search-input")?.addEventListener("input", (e) => {
+    state.searchQuery = (e.target.value || "").trim();
+    if (state.activeTab === "chats") renderChatsTab();
+    if (state.activeTab === "status") renderStatusTab();
+    if (state.activeTab === "feed") renderFeedTab();
+  });
+
+  document.querySelectorAll(".sg-nav-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const tab = btn.getAttribute("data-tab");
+      if (tab) switchTab(tab);
     });
   });
 
-  els.feedList?.addEventListener('click', (event) => {
-    const actionBtn = event.target.closest('[data-action]');
-    if (!actionBtn) return;
+  const statusMediaInput = document.getElementById("status-media-input");
+  const statusDraftCard = document.getElementById("status-draft-card");
+  const statusPreviewBox = document.getElementById("status-media-preview");
+  const statusCaptionInput = document.getElementById("status-caption-input");
 
-    const action = actionBtn.dataset.action;
-    const postId = actionBtn.dataset.id;
+  const resetStatusDraft = () => {
+    state.pendingStatusMedia = null;
+    if (statusMediaInput) statusMediaInput.value = "";
+    if (statusCaptionInput) statusCaptionInput.value = "";
+    if (statusPreviewBox) statusPreviewBox.innerHTML = "";
+    if (statusDraftCard) statusDraftCard.style.display = "none";
+  };
 
-    if (action === 'boost') {
-      handleBoostPost(postId);
-    } else if (action === 'toggle-reply') {
-      const replyForm = els.feedList.querySelector(`[data-reply-form="${CSS.escape(postId)}"]`);
-      if (replyForm) {
-        replyForm.hidden = !replyForm.hidden;
-        if (!replyForm.hidden) {
-          replyForm.querySelector('input[name="replyText"]')?.focus();
-        }
+  statusMediaInput?.addEventListener("change", () => {
+    const file = statusMediaInput.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const isVideo = file.type.startsWith("video/");
+      const dataUrl = String(reader.result || "");
+      state.pendingStatusMedia = {
+        mediaUrl: dataUrl,
+        mediaType: isVideo ? "video" : "image",
+      };
+
+      if (statusPreviewBox) {
+        statusPreviewBox.innerHTML = isVideo
+          ? `<video src="${escapeHtml(dataUrl)}" class="sg-story-preview-media" controls playsinline></video>`
+          : `<img src="${escapeHtml(dataUrl)}" alt="Selected story" class="sg-story-preview-media" />`;
       }
+      if (statusDraftCard) statusDraftCard.style.display = "block";
+      if (statusCaptionInput) statusCaptionInput.value = "";
+    };
+    reader.readAsDataURL(file);
+  });
+
+  document.getElementById("cancel-status-btn")?.addEventListener("click", resetStatusDraft);
+
+  document.getElementById("publish-status-btn")?.addEventListener("click", () => {
+    if (!state.pendingStatusMedia?.mediaUrl) return;
+    const caption = (statusCaptionInput?.value || "").trim();
+    const author = state.profile.displayName || state.profile.handle || "Scott";
+
+    state.statuses.unshift({
+      id: `st-${Date.now()}`,
+      author,
+      caption,
+      mediaUrl: state.pendingStatusMedia.mediaUrl,
+      mediaType: state.pendingStatusMedia.mediaType,
+      createdAt: Date.now(),
+      timeLabel: "Just now",
+    });
+
+    saveJson(STORAGE_KEYS.statuses, state.statuses);
+    resetStatusDraft();
+    renderStatusTab();
+  });
+
+  document.getElementById("close-story-btn")?.addEventListener("click", closeStoryModal);
+  document.getElementById("story-modal")?.addEventListener("click", (e) => {
+    if (e.target.id === "story-modal") closeStoryModal();
+  });
+
+  document.getElementById("chat-theme-select")?.addEventListener("change", (e) => {
+    const theme = e.target.value || "midnight";
+    localStorage.setItem(STORAGE_KEYS.chatTheme, theme);
+    document.getElementById("tab-chats")?.setAttribute("data-chat-theme", theme);
+  });
+
+  document.querySelectorAll("[data-chat-filter]").forEach((pill) => {
+    pill.addEventListener("click", () => {
+      state.chatFilter = pill.getAttribute("data-chat-filter") || "all";
+      document.querySelectorAll("[data-chat-filter]").forEach((p) => {
+        p.classList.toggle("is-active", p === pill);
+      });
+      renderChatsTab();
+    });
+  });
+
+  document.getElementById("chat-back-btn")?.addEventListener("click", () => {
+    state.activeChatId = null;
+    renderChatsTab();
+  });
+
+  document.getElementById("chat-text-input")?.addEventListener("input", syncComposerActionButtons);
+
+  document.getElementById("chat-media-input")?.addEventListener("change", (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      state.pendingChatMedia = {
+        mediaUrl: String(reader.result || ""),
+        mediaType: file.type.startsWith("video/") ? "video" : "image",
+      };
+      syncComposerActionButtons();
+    };
+    reader.readAsDataURL(file);
+  });
+
+  document.getElementById("record-voice-btn")?.addEventListener("click", async () => {
+    const thread = state.chats.find((t) => t.id === state.activeChatId);
+    if (!thread) return;
+
+    if (state.mediaRecorder && state.mediaRecorder.state === "recording") {
+      state.mediaRecorder.stop();
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      state.audioChunks = [];
+      const recorder = new MediaRecorder(stream);
+      state.mediaRecorder = recorder;
+
+      recorder.ondataavailable = (ev) => {
+        if (ev.data && ev.data.size > 0) state.audioChunks.push(ev.data);
+      };
+
+      recorder.onstop = () => {
+        stream.getTracks().forEach((tr) => tr.stop());
+        const blob = new Blob(state.audioChunks, { type: "audio/webm" });
+        const reader = new FileReader();
+        reader.onload = () => {
+          thread.messages.push({
+            id: `msg-${Date.now()}`,
+            sender: state.profile.displayName || "Scott",
+            text: "Voice note",
+            audioUrl: String(reader.result || ""),
+            time: "Just now",
+            outgoing: true,
+          });
+          thread.lastTime = "Now";
+          saveJson(STORAGE_KEYS.chats, state.chats);
+          renderChatsTab();
+        };
+        reader.readAsDataURL(blob);
+      };
+
+      recorder.start();
+    } catch {
+      thread.messages.push({
+        id: `msg-${Date.now()}`,
+        sender: state.profile.displayName || "Scott",
+        text: "[Voice note]",
+        time: "Just now",
+        outgoing: true,
+      });
+      thread.lastTime = "Now";
+      saveJson(STORAGE_KEYS.chats, state.chats);
+      renderChatsTab();
     }
   });
 
-  els.feedList?.addEventListener('submit', (event) => {
-    const replyForm = event.target.closest('[data-reply-form]');
-    if (!replyForm) return;
-    event.preventDefault();
+  document.getElementById("chat-composer-form")?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const thread = state.chats.find((t) => t.id === state.activeChatId);
+    if (!thread) return;
 
-    const postId = replyForm.dataset.replyForm;
-    const input = replyForm.querySelector('input[name="replyText"]');
-    handleReplySubmit(postId, input?.value || '', replyForm);
+    const input = document.getElementById("chat-text-input");
+    const viewOnceCheck = document.getElementById("chat-view-once");
+    const text = (input?.value || "").trim();
+    const media = state.pendingChatMedia;
+    if (!text && !media) return;
+
+    thread.messages.push({
+      id: `msg-${Date.now()}`,
+      sender: state.profile.displayName || "Scott",
+      text,
+      mediaUrl: media?.mediaUrl || "",
+      mediaType: media?.mediaType || "",
+      viewOnce: Boolean(viewOnceCheck?.checked),
+      time: "Just now",
+      outgoing: true,
+    });
+    thread.lastTime = "Now";
+
+    if (input) input.value = "";
+    if (viewOnceCheck) viewOnceCheck.checked = false;
+    state.pendingChatMedia = null;
+    syncComposerActionButtons();
+
+    saveJson(STORAGE_KEYS.chats, state.chats);
+    renderChatsTab();
+  });
+
+  document.getElementById("start-video-call-btn")?.addEventListener("click", () => openCallModal("video"));
+  document.getElementById("start-voice-call-btn")?.addEventListener("click", () => openCallModal("voice"));
+  document.getElementById("end-call-btn")?.addEventListener("click", closeCallModal);
+
+  document.getElementById("toggle-mic-btn")?.addEventListener("click", (e) => {
+    state.micEnabled = !state.micEnabled;
+    if (state.callStream) {
+      state.callStream.getAudioTracks().forEach((t) => (t.enabled = state.micEnabled));
+    }
+    e.currentTarget.textContent = state.micEnabled ? "Mic On" : "Mic Off";
+  });
+
+  document.getElementById("toggle-cam-btn")?.addEventListener("click", (e) => {
+    state.camEnabled = !state.camEnabled;
+    if (state.callStream) {
+      state.callStream.getVideoTracks().forEach((t) => (t.enabled = state.camEnabled));
+    }
+    e.currentTarget.textContent = state.camEnabled ? "Cam On" : "Cam Off";
+  });
+
+  const feedMediaInput = document.getElementById("feed-media-input");
+  const feedMediaLabel = document.getElementById("feed-media-preview-label");
+
+  feedMediaInput?.addEventListener("change", () => {
+    const file = feedMediaInput.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      state.pendingFeedMedia = {
+        mediaUrl: String(reader.result || ""),
+        mediaType: file.type.startsWith("video/") ? "video" : "image",
+      };
+      if (feedMediaLabel) feedMediaLabel.textContent = `Attached: ${file.name}`;
+    };
+    reader.readAsDataURL(file);
+  });
+
+  document.getElementById("feed-post-form")?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const textInput = document.getElementById("feed-post-input");
+    const feedStatus = document.getElementById("feed-status");
+    const text = (textInput?.value || "").trim();
+    if (!text && !state.pendingFeedMedia) return;
+
+    state.feed.unshift({
+      id: `fd-${Date.now()}`,
+      author: state.profile.displayName || state.profile.handle || "Scott",
+      text,
+      mediaUrl: state.pendingFeedMedia?.mediaUrl || "",
+      mediaType: state.pendingFeedMedia?.mediaType || "",
+      timeLabel: "Just now",
+    });
+
+    saveJson(STORAGE_KEYS.feed, state.feed);
+    if (textInput) textInput.value = "";
+    if (feedMediaInput) feedMediaInput.value = "";
+    if (feedMediaLabel) feedMediaLabel.textContent = "";
+    if (feedStatus) feedStatus.textContent = "Broadcast sent.";
+    state.pendingFeedMedia = null;
+    renderFeedTab();
+  });
+
+  const sendPanel = document.getElementById("send-tokens-panel");
+  const withdrawPanel = document.getElementById("withdraw-panel");
+  const walletNote = document.getElementById("wallet-note");
+
+  document.getElementById("send-tokens-btn")?.addEventListener("click", () => {
+    if (sendPanel) sendPanel.style.display = "block";
+    if (withdrawPanel) withdrawPanel.style.display = "none";
+  });
+
+  document.getElementById("cancel-send-btn")?.addEventListener("click", () => {
+    if (sendPanel) sendPanel.style.display = "none";
+  });
+
+  document.getElementById("withdraw-tokens-btn")?.addEventListener("click", () => {
+    if (withdrawPanel) withdrawPanel.style.display = "block";
+    if (sendPanel) sendPanel.style.display = "none";
+  });
+
+  document.getElementById("cancel-withdraw-btn")?.addEventListener("click", () => {
+    if (withdrawPanel) withdrawPanel.style.display = "none";
+  });
+
+  document.getElementById("confirm-send-btn")?.addEventListener("click", () => {
+    const recipient = (document.getElementById("send-recipient")?.value || "").trim();
+    const amount = Number(document.getElementById("send-amount")?.value || 0);
+    const memo = (document.getElementById("send-memo")?.value || "").trim();
+
+    if (!recipient || amount <= 0) {
+      if (walletNote) walletNote.textContent = "Enter a valid recipient and token amount.";
+      return;
+    }
+    if (amount > Number(state.wallet.sgtTokens || 0)) {
+      if (walletNote) walletNote.textContent = "Insufficient SGT token balance.";
+      return;
+    }
+
+    state.wallet.sgtTokens = Number((Number(state.wallet.sgtTokens) - amount).toFixed(4));
+    state.wallet.transactions.unshift({
+      id: `tx-${Date.now()}`,
+      label: `Sent ${amount.toFixed(2)} SGT`,
+      detail: `To ${recipient}${memo ? ` · ${memo}` : ""}`,
+      timeLabel: "Just now",
+    });
+
+    saveJson(STORAGE_KEYS.wallet, state.wallet);
+    if (sendPanel) sendPanel.style.display = "none";
+    if (walletNote) walletNote.textContent = `Sent ${amount.toFixed(2)} SGT to ${recipient}.`;
+    renderWalletTab();
+  });
+
+  document.getElementById("confirm-withdraw-btn")?.addEventListener("click", async () => {
+    const method = document.getElementById("withdraw-method")?.value || "mobile";
+    const destination = (document.getElementById("withdraw-destination")?.value || "").trim();
+    const amountUsd = Number(document.getElementById("withdraw-amount-usd")?.value || 0);
+
+    if (!destination || amountUsd <= 0) {
+      if (walletNote) walletNote.textContent = "Enter a valid payout destination and USD amount.";
+      return;
+    }
+    if (amountUsd > Number(state.wallet.usdBalance || 0)) {
+      if (walletNote) walletNote.textContent = "Insufficient balance for this cash-out.";
+      return;
+    }
+
+    state.wallet.usdBalance = Number((Number(state.wallet.usdBalance) - amountUsd).toFixed(4));
+    state.wallet.transactions.unshift({
+      id: `tx-${Date.now()}`,
+      label: `Withdraw $${amountUsd.toFixed(2)}`,
+      detail: `${method.toUpperCase()} · ${destination}`,
+      timeLabel: "Just now",
+    });
+
+    saveJson(STORAGE_KEYS.wallet, state.wallet);
+    if (withdrawPanel) withdrawPanel.style.display = "none";
+    renderWalletTab();
+
+    const apiResult = await submitWithdrawalToApi({
+      method,
+      destination,
+      amountUsd,
+      handle: state.profile.handle,
+    });
+    if (walletNote) {
+      walletNote.textContent = apiResult.ok
+        ? `Withdrawal of $${amountUsd.toFixed(2)} submitted.`
+        : `Recorded $${amountUsd.toFixed(2)} withdrawal locally (connect /api/payouts/withdraw for live settlement).`;
+    }
+  });
+
+  document.getElementById("avatar-photo-input")?.addEventListener("change", (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      state.profile.avatarDataUrl = String(reader.result || "");
+      saveJson(STORAGE_KEYS.profile, state.profile);
+      renderHeaderAndNearby();
+      renderStatusTab();
+    };
+    reader.readAsDataURL(file);
+  });
+
+  document.getElementById("profile-form")?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const handleVal = (document.getElementById("handle")?.value || "@scott").trim();
+    const nameVal = (document.getElementById("display-name")?.value || "").trim();
+    const bioVal = (document.getElementById("bio")?.value || "").trim();
+    const ghostVal = Boolean(document.getElementById("ghost-mode")?.checked);
+    const currencyVal = document.getElementById("display-currency")?.value || "USD";
+
+    state.profile.handle = handleVal.startsWith("@") ? handleVal : `@${handleVal}`;
+    state.profile.displayName = nameVal || "Scott";
+    state.profile.bio = bioVal;
+    state.profile.ghostMode = ghostVal;
+    state.profile.displayCurrency = currencyVal;
+
+    saveJson(STORAGE_KEYS.profile, state.profile);
+    const profStatus = document.getElementById("profile-status");
+    if (profStatus) profStatus.textContent = "Profile changes saved.";
+    renderHeaderAndNearby();
+    renderStatusTab();
+    renderWalletTab();
+    renderMeTab();
+  });
+
+  document.getElementById("sign-out-btn")?.addEventListener("click", () => {
+    setAuthState(false);
+    if (passInput) passInput.value = "";
   });
 }
 
-async function initApp() {
+// --- SERVICE WORKER & LIVE LEDGER TICK ---
+function registerServiceWorker() {
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("./sw.js").catch(() => {});
+    });
+  }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  hydrateState();
   bindEvents();
-  syncComposerActionButton();
-  renderChatThreadList();
-  switchTab('feed');
+  renderAll();
+  registerServiceWorker();
 
-  const {
-    data: { session }
-  } = await supabase.auth.getSession();
-
-  state.user = session?.user || null;
-  await loadAndApplyUserTheme(state.user);
-  await loadProfile(state.user);
-  await loadFeedPosts();
-  subscribeToLiveFeed();
-
-  supabase.auth.onAuthStateChange(async (event, nextSession) => {
-    if (event === 'INITIAL_SESSION') return;
-    state.user = nextSession?.user || null;
-    await loadAndApplyUserTheme(state.user);
-    await loadProfile(state.user);
-    await loadFeedPosts();
-  });
-
-  window.addEventListener('beforeunload', () => {
-    if (state.feedChannel) {
-      supabase.removeChannel(state.feedChannel);
+  setInterval(() => {
+    if (!state.authenticated) return;
+    syncWalletTicks(Date.now());
+    if (state.activeTab === "wallet") {
+      renderWalletTab();
     }
-  });
-}
-
-initApp();
+  }, 5000);
+});
