@@ -1,4 +1,4 @@
-* {
+﻿* {
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
 }
@@ -27,8 +27,7 @@ body {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   background: var(--sg-bg);
   color: var(--sg-text);
-  font-size: 13px;
-  line-height: 1.35;
+  font-size: 15px; line-height: 1.45;
   -webkit-font-smoothing: antialiased;
   -webkit-text-size-adjust: 100%;
 }
@@ -197,7 +196,7 @@ body {
   max-width: 390px;
   min-height: 100dvh;
   margin: 0 auto;
-  padding: 10px 10px calc(86px + env(safe-area-inset-bottom, 0px));
+  padding: 14px 14px calc(96px + env(safe-area-inset-bottom, 0px));
   overflow-x: hidden;
 }
 
@@ -215,7 +214,7 @@ body {
 
 .sg-brand-wordmark {
   font-weight: 800;
-  font-size: 0.98rem;
+  font-size: 1.15rem;
   letter-spacing: -0.02em;
 }
 
@@ -225,8 +224,7 @@ body {
 }
 
 .sg-icon-btn {
-  width: 30px;
-  height: 30px;
+  width: 36px; height: 36px;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: #0f1c38;
@@ -243,8 +241,7 @@ body {
 }
 
 .sg-svg-icon {
-  width: 14px;
-  height: 14px;
+  width: 17px; height: 17px;
   fill: none;
   stroke: currentColor;
   stroke-width: 2;
@@ -312,7 +309,7 @@ body {
 
 .sg-section-title {
   margin: 2px 0 8px;
-  font-size: 0.95rem;
+  font-size: 1.1rem;
   font-weight: 800;
   letter-spacing: -0.01em;
 }
@@ -1081,8 +1078,7 @@ body {
 }
 
 .sg-nav-icon {
-  width: 16px;
-  height: 16px;
+  width: 20px; height: 20px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.9;
