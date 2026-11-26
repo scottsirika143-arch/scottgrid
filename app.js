@@ -2733,3 +2733,214 @@ syncVideoCallModal();
     });
   }
 })();
+
+(() => {
+  const PRESENCE_STORAGE_KEY = "scottgrid.global_radar_presence.v1";
+  const GLOBAL_APP_USERS = [
+    { id: "peer-1", name: "Nadia K.", handle: "@nadiak", country: "Kenya", distanceLabel: "518 km", online: true },
+    { id: "peer-2", name: "Tariq M.", handle: "@tariqm", country: "Nigeria", distanceLabel: "3,210 km", online: true },
+    { id: "peer-3", name: "Elena R.", handle: "@elenar", country: "United Kingdom", distanceLabel: "6,490 km", online: false },
+    { id: "peer-4", name: "Devon P.", handle: "@devonp", country: "Canada", distanceLabel: "11,640 km", online: true },
+    { id: "peer-5", name: "Zuri A.", handle: "@zuria", country: "Rwanda", distanceLabel: "380 km", online: false },
+    { id: "peer-6", name: "Kenji T.", handle: "@kenjit", country: "Japan", distanceLabel: "12,180 km", online: true }
+  ];
+
+  let activeFilter = "All";
+  let syncTimer = null;
+
+  function loadPresence() {
+    try {
+      const raw = localStorage.getItem(PRESENCE_STORAGE_KEY);
+      if (!raw) return { myOnline: true };
+      const parsed = JSON.parse(raw);
+      return { myOnline: parsed.myOnline !== false };
+    } catch (_) {
+      return { myOnline: true };
+    }
+  }
+
+  function savePresence(nextPresence) {
+    try {
+      localStorage.setItem(PRESENCE_STORAGE_KEY, JSON.stringify(nextPresence));
+    } catch (_) {}
+  }
+
+  let myPresence = loadPresence();
+
+  function openChatWithPeer(peer) {
+    if (typeof state !== "undefined") {
+      state.activeChatTarget = {
+        name: peer.name,
+        handle: peer.handle,
+        country: peer.country
+      };
+      if (Array.isArray(state.chats)) {
+        const exists = state.chats.some(
+          (c) => String(c.handle || "").toLowerCase() === String(peer.handle || "").toLowerCase()
+        );
+        if (!exists) {
+          state.chats.unshift({
+            id: `chat-${peer.id}`,
+            title: peer.name,
+            name: peer.name,
+            handle: peer.handle,
+            subtitle: `${peer.country} · ${peer.online ? "Online" : "Offline"}`,
+            lastMessage: `Connected across ${peer.country} (${peer.distanceLabel}).`,
+            unread: 0,
+            messages: []
+          });
+          if (typeof saveJson === "function" && typeof STORAGE_KEYS !== "undefined" && STORAGE_KEYS.chats) {
+            saveJson(STORAGE_KEYS.chats, state.chats);
+          }
+        }
+      }
+    }
+
+    if (typeof switchTab === "function") {
+      switchTab("chats");
+    } else {
+      const chatTabBtn = document.querySelector('[data-tab="chats"], #tab-chats, [aria-controls*="chat"]');
+      if (chatTabBtn) chatTabBtn.click();
+    }
+  }
+
+  function renderGlobalRadarPanel() {
+    const anchor =
+      document.getElementById("nearby-count-pill") ||
+      document.getElementById("radar-you-label");
+    if (!anchor) return;
+
+    const onlineCount = GLOBAL_APP_USERS.filter((u) => u.online).length + (myPresence.myOnline ? 1 : 0);
+    const totalCount = GLOBAL_APP_USERS.length + 1;
+
+    const pill = document.getElementById("nearby-count-pill");
+    const nextPillText = `${onlineCount} Online · ${totalCount} On Grid`;
+    if (pill && pill.textContent !== nextPillText) {
+      pill.textContent = nextPillText;
+    }
+
+    let panel = document.getElementById("sg-global-radar-panel");
+    if (!panel) {
+      panel = document.createElement("div");
+      panel.id = "sg-global-radar-panel";
+      panel.className = "sg-radar-panel";
+      const container = anchor.closest(".sg-card, .sg-panel, section") || anchor.parentElement;
+      if (container) {
+        container.insertAdjacentElement("afterend", panel);
+      } else {
+        anchor.insertAdjacentElement("afterend", panel);
+      }
+    }
+
+    const myName =
+      (typeof state !== "undefined" && state.profile && (state.profile.displayName || state.profile.handle)) ||
+      "You";
+    const myHandle =
+      (typeof state !== "undefined" && state.profile && state.profile.handle) || "@scott";
+
+    const allEntries = [
+      {
+        id: "self",
+        name: `${myName} (You)`,
+        handle: myHandle,
+        country: "Global App User",
+        distanceLabel: "No distance limit",
+        online: Boolean(myPresence.myOnline),
+        isSelf: true
+      },
+      ...GLOBAL_APP_USERS
+    ].filter((u) => {
+      if (activeFilter === "Online") return u.online;
+      if (activeFilter === "Offline") return !u.online;
+      return true;
+    });
+
+    const filterHtml = ["All", "Online", "Offline"]
+      .map(
+        (f) =>
+          `<button type="button" class="sg-radar-pill ${activeFilter === f ? "is-active" : ""}" data-radar-filter="${f}">${f}</button>`
+      )
+      .join("");
+
+    const rowsHtml = allEntries
+      .map((person) => {
+        const statusClass = person.online ? "is-online" : "is-offline";
+        const statusLabel = person.online ? "Online" : "Offline";
+        const chatBtnHtml = person.isSelf
+          ? ""
+          : `<button type="button" class="sg-radar-chat-btn" data-radar-chat="${person.id}">Chat</button>`;
+
+        return `
+          <div class="sg-radar-user">
+            <div class="sg-radar-user-info">
+              <div class="sg-radar-user-name">
+                <span class="sg-radar-status-dot ${statusClass}"></span>
+                <span>${person.name}</span>
+              </div>
+              <div class="sg-radar-user-meta">${person.handle} · ${person.country} · ${person.distanceLabel}</div>
+            </div>
+            <div class="sg-radar-right">
+              <span class="sg-radar-badge ${statusClass}">${statusLabel}</span>
+              ${chatBtnHtml}
+            </div>
+          </div>
+        `;
+      })
+      .join("");
+
+    const nextHtml = `
+      <div class="sg-radar-top">
+        <div class="sg-radar-filters">${filterHtml}</div>
+        <button type="button" class="sg-radar-pill ${myPresence.myOnline ? "is-active" : ""}" id="sg-radar-self-toggle">
+          You: ${myPresence.myOnline ? "Online" : "Offline"}
+        </button>
+      </div>
+      <div class="sg-radar-list">${rowsHtml || '<div class="sg-radar-user-meta">No app users in this filter.</div>'}</div>
+    `;
+
+    if (panel.innerHTML !== nextHtml) {
+      panel.innerHTML = nextHtml;
+
+      panel.querySelectorAll("[data-radar-filter]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          activeFilter = btn.dataset.radarFilter || "All";
+          renderGlobalRadarPanel();
+        });
+      });
+
+      const toggleBtn = document.getElementById("sg-radar-self-toggle");
+      if (toggleBtn) {
+        toggleBtn.addEventListener("click", () => {
+          myPresence.myOnline = !myPresence.myOnline;
+          savePresence(myPresence);
+          renderGlobalRadarPanel();
+        });
+      }
+
+      panel.querySelectorAll("[data-radar-chat]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const targetId = btn.dataset.radarChat;
+          const peer = GLOBAL_APP_USERS.find((u) => u.id === targetId);
+          if (peer) openChatWithPeer(peer);
+        });
+      });
+    }
+  }
+
+  function scheduleRadarSync() {
+    if (syncTimer) clearTimeout(syncTimer);
+    syncTimer = setTimeout(renderGlobalRadarPanel, 80);
+  }
+
+  document.addEventListener("click", (e) => {
+    if (e.target.closest('[data-tab="nearby"], #tab-nearby, [aria-controls*="nearby"]')) {
+      scheduleRadarSync();
+    }
+  });
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", scheduleRadarSync);
+  } else {
+    scheduleRadarSync();
+  }
+})();
