@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -9,7 +9,7 @@
     <meta name="theme-color" content="#070d17" />
     <title>ScottGrid</title>
     <link rel="manifest" href="./manifest.json" />
-    <link rel="icon" type="image/png" href="./public/logo.png" />
+    <link rel="icon" type="image/png" href="./public/spider-icon.png" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -39,7 +39,7 @@
             id="password"
             class="sg-input"
             type="password"
-            placeholder="••••••••"
+            placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
             autocomplete="current-password"
           />
         </div>
@@ -57,7 +57,6 @@
 
     <!-- MAIN APP VIEW -->
     <div id="app-view" style="display: none;">
-      <canvas id="sg-spider-canvas" class="sg-spider-canvas" aria-hidden="true"></canvas>
       <div class="sg-shell-inner">
         <!-- Top Header -->
         <header class="sg-topbar">
@@ -124,7 +123,7 @@
                 <div id="radar-you-label" class="sg-you-label">You</div>
               </div>
               <div id="radar-footer" class="sg-radar-footer">
-                Nobody nearby yet — invite friends to join ScottGrid
+                Nobody nearby yet â€” invite friends to join ScottGrid
               </div>
             </div>
           </section>
@@ -155,13 +154,13 @@
             <div id="chat-thread-view" style="display: none;">
               <div class="sg-wa-thread-topbar">
                 <button id="chat-back-btn" type="button" class="sg-wa-back-btn" aria-label="Back to chats">
-                  ‹ <span id="chat-total-unread">0</span>
+                  â€¹ <span id="chat-total-unread">0</span>
                 </button>
                 <div class="sg-wa-thread-peer">
                   <div id="chat-active-avatar" class="sg-wa-avatar">S</div>
                   <div>
                     <div id="chat-active-title" class="sg-wa-thread-title">Grid Mesh</div>
-                    <div id="chat-peer-sub" class="sg-wa-thread-sub">Encrypted mesh · Tap for info</div>
+                    <div id="chat-peer-sub" class="sg-wa-thread-sub">Encrypted mesh Â· Tap for info</div>
                   </div>
                 </div>
                 <div class="sg-call-actions">
@@ -229,7 +228,7 @@
                   aria-label="Send"
                   style="display: none;"
                 >
-                  ➤
+                  âž¤
                 </button>
               </form>
             </div>
@@ -315,7 +314,7 @@
               <span id="wallet-currency-badge" class="sg-currency-badge">USD</span>
               <div id="wallet-balance-text" class="sg-balance-amount">$0.84</div>
               <p id="wallet-token-line" class="sg-token-sub">
-                0.84 SGT tokens · <span id="wallet-rewards-text">0.84</span> pending rewards · +$0.50/min live
+                0.84 SGT tokens Â· <span id="wallet-rewards-text">0.84</span> pending rewards Â· +$0.50/min live
               </p>
 
               <div class="sg-row-actions sg-wallet-actions sg-mt-12">
@@ -383,7 +382,7 @@
 
               <div>
                 <h2 id="me-handle-heading" class="sg-me-handle">@scott</h2>
-                <p id="me-subtitle" class="sg-me-role">Scott · ScottGrid Member</p>
+                <p id="me-subtitle" class="sg-me-role">Scott Â· ScottGrid Member</p>
               </div>
             </div>
 

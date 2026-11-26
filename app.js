@@ -1,4 +1,4 @@
-// ScottGrid Core Application Module
+﻿// ScottGrid Core Application Module
 
 const STORAGE_KEYS = {
   session: "scottgrid.session.v1",
@@ -17,7 +17,7 @@ const SGT_PER_MINUTE = 1.0;
 const CURRENCY_RATES = {
   USD: { symbol: "$", rate: 1, decimals: 2 },
   UGX: { symbol: "UGX ", rate: 3700, decimals: 0 },
-  EUR: { symbol: "€", rate: 0.92, decimals: 2 },
+  EUR: { symbol: "â‚¬", rate: 0.92, decimals: 2 },
 };
 
 const DEFAULT_PROFILE = {
@@ -45,7 +45,7 @@ function createDefaultChats() {
     {
       id: "mesh-lobby",
       name: "Grid Mesh",
-      subtitle: "Local signal room · Online",
+      subtitle: "Local signal room Â· Online",
       avatar: "GM",
       unread: 1,
       favorite: true,
@@ -64,7 +64,7 @@ function createDefaultChats() {
     {
       id: "signal-ops",
       name: "Signal Relay",
-      subtitle: "Mesh node · Active",
+      subtitle: "Mesh node Â· Active",
       avatar: "SR",
       unread: 0,
       favorite: false,
@@ -522,7 +522,7 @@ function getTotalUnread() {
   return state.chats.reduce((sum, t) => sum + Number(t.unread || 0), 0);
 }
 
-function renderChatsTab() {
+function normalizeMeshMessage(row) { const currentName = (state.profile?.displayName || "Scott").trim(); const sender = String(row?.sender || "Grid Node").trim(); const createdTime = row?.created_at ? new Date(row.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Just now"; return { id: row?.id || `mesh-${Date.now()}`, sender, handle: String(row?.handle || "").trim(), text: String(row?.text || ""), time: createdTime, outgoing: sender.toLowerCase() === currentName.toLowerCase() }; } async function syncMeshLobbyMessages(roomId = "mesh-lobby") { const thread = state.chats.find((t) => t.id === roomId); if (!thread) return; try { const res = await fetch(`/api/mesh/messages?roomId=${encodeURIComponent(roomId)}`); const data = await res.json().catch(() => ({})); if (!res.ok || !data.ok || !Array.isArray(data.messages)) return; thread.messages = data.messages.map(normalizeMeshMessage); if (thread.messages.length > 0) { const lastMsg = thread.messages[thread.messages.length - 1]; thread.lastMessage = lastMsg.text || "Mesh signal"; thread.lastTime = lastMsg.time || "Now"; } saveJson(STORAGE_KEYS.chats, state.chats); if (state.activeTab === "chats" && state.activeChatId === roomId) { renderChatsTab(); } } catch {} } async function postMeshLobbyMessage({ text, sender, handle = "", roomId = "mesh-lobby" }) { const res = await fetch("/api/mesh/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, sender, handle, roomId }) }); const data = await res.json().catch(() => ({})); if (!res.ok || !data.ok || !data.message) { throw new Error(data?.error || "Failed to send mesh message"); } return normalizeMeshMessage(data.message); } function renderChatsTab() {
   const listView = document.getElementById("chat-list-view");
   const threadView = document.getElementById("chat-thread-view");
   const threadListEl = document.getElementById("chat-thread-list");
@@ -621,7 +621,7 @@ function renderChatsTab() {
             <div class="sg-chat-bubble ${m.outgoing ? "is-outgoing" : ""}">
               <div class="sg-chat-meta">
                 <strong>${escapeHtml(m.sender || "You")}</strong>
-                <span>${escapeHtml(m.time || "")}${m.viewOnce ? " · 1x" : ""}</span>
+                <span>${escapeHtml(m.time || "")}${m.viewOnce ? " Â· 1x" : ""}</span>
               </div>
               ${m.text ? `<div>${escapeHtml(m.text)}</div>` : ""}
               ${mediaPart}
@@ -642,6 +642,9 @@ function openChatThread(threadId) {
   state.activeChatId = threadId;
   saveJson(STORAGE_KEYS.chats, state.chats);
   renderChatsTab();
+  if (threadId === "mesh-lobby" && typeof syncMeshLobbyMessages === "function") {
+    syncMeshLobbyMessages(threadId);
+  }
 }
 
 function syncComposerActionButtons() {
@@ -774,7 +777,7 @@ function renderWalletTab() {
       MIN_BASELINE_USD,
       Number(state.wallet.pendingRewards || activeUsd)
     ).toFixed(2);
-    tokenLine.innerHTML = `${sgtFormatted} SGT tokens · <span id="wallet-rewards-text">${pendingFormatted}</span> pending rewards · +$0.50/min live`;
+    tokenLine.innerHTML = `${sgtFormatted} SGT tokens Â· <span id="wallet-rewards-text">${pendingFormatted}</span> pending rewards Â· +$0.50/min live`;
   }
 
   const txList = Array.isArray(state.wallet.transactions) ? state.wallet.transactions : [];
@@ -837,7 +840,7 @@ function renderMeTab() {
   if (handleHeading) handleHeading.textContent = cleanHandle;
   if (subtitleEl) {
     subtitleEl.textContent = state.profile.displayName
-      ? `${state.profile.displayName} · ScottGrid Member`
+      ? `${state.profile.displayName} Â· ScottGrid Member`
       : "ScottGrid Member";
   }
   if (handleInput) handleInput.value = cleanHandle;
@@ -856,152 +859,6 @@ function renderAll() {
   renderMeTab();
   switchTab(state.activeTab);
 }
-
-// --- DYNAMIC SPIDER OVERLAY ---
-function initDynamicSpider() {
-  const canvas = document.getElementById("sg-spider-canvas");
-  if (!canvas) return;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-
-  let width = (canvas.width = window.innerWidth);
-  let height = (canvas.height = window.innerHeight);
-
-  const spider = {
-    x: width * 0.5,
-    y: height * 0.35,
-    vx: 0,
-    vy: 0,
-    targetX: width * 0.65,
-    targetY: height * 0.45,
-    phase: 0,
-    anchorX: width * 0.5,
-    anchorY: 0,
-  };
-
-  let pointerActive = false;
-  let pointerX = spider.targetX;
-  let pointerY = spider.targetY;
-  let nextWanderAt = Date.now() + 1800;
-
-  window.addEventListener("resize", () => {
-    width = canvas.width = window.innerWidth;
-    height = canvas.height = window.innerHeight;
-    spider.anchorX = width * 0.5;
-  });
-
-  const updatePointer = (x, y) => {
-    pointerActive = true;
-    pointerX = x;
-    pointerY = y;
-  };
-
-  window.addEventListener("pointermove", (e) => updatePointer(e.clientX, e.clientY), { passive: true });
-  window.addEventListener(
-    "touchstart",
-    (e) => {
-      if (e.touches[0]) updatePointer(e.touches[0].clientX, e.touches[0].clientY);
-    },
-    { passive: true }
-  );
-
-  function pickNextTarget(now) {
-    const padX = Math.max(48, width * 0.14);
-    const padY = Math.max(80, height * 0.16);
-    spider.targetX = padX + Math.random() * Math.max(40, width - padX * 2);
-    spider.targetY = padY + Math.random() * Math.max(60, height - padY * 2.4);
-    nextWanderAt = now + 2200 + Math.random() * 2400;
-  }
-
-  function drawSpider() {
-    const appView = document.getElementById("app-view");
-    ctx.clearRect(0, 0, width, height);
-
-    if (!appView || appView.style.display === "none") {
-      requestAnimationFrame(drawSpider);
-      return;
-    }
-
-    const now = Date.now();
-    if (pointerActive) {
-      spider.targetX += (pointerX - spider.targetX) * 0.08;
-      spider.targetY += (pointerY - spider.targetY) * 0.08;
-    } else if (now >= nextWanderAt) {
-      pickNextTarget(now);
-    }
-
-    const dx = spider.targetX - spider.x;
-    const dy = spider.targetY - spider.y;
-    spider.vx = spider.vx * 0.88 + dx * 0.008;
-    spider.vy = spider.vy * 0.88 + dy * 0.008;
-    spider.x += spider.vx;
-    spider.y += spider.vy;
-
-    const speed = Math.hypot(spider.vx, spider.vy);
-    spider.phase += 0.12 + speed * 0.08;
-
-    const angle = Math.atan2(spider.vy, spider.vx) + Math.PI / 2;
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(spider.anchorX, 0);
-    ctx.lineTo(spider.x, spider.y);
-    ctx.strokeStyle = "rgba(56, 189, 248, 0.22)";
-    ctx.lineWidth = 1;
-    ctx.stroke();
-
-    ctx.translate(spider.x, spider.y);
-    ctx.rotate(angle);
-
-    const legPairs = [
-      { spread: -0.95, len: 18 },
-      { spread: -0.45, len: 21 },
-      { spread: 0.45, len: 21 },
-      { spread: 0.95, len: 18 },
-    ];
-
-    legPairs.forEach((leg, idx) => {
-      [-1, 1].forEach((side) => {
-        const swing = Math.sin(spider.phase + idx * 1.1 + (side > 0 ? 0 : Math.PI)) * 0.22;
-        const baseAngle = side * (Math.PI * 0.5 + leg.spread * 0.55) + swing;
-        const kneeX = Math.cos(baseAngle) * (leg.len * 0.65);
-        const kneeY = Math.sin(baseAngle) * (leg.len * 0.65) - 4;
-        const tipX = Math.cos(baseAngle) * leg.len;
-        const tipY = Math.sin(baseAngle) * leg.len + 3;
-
-        ctx.beginPath();
-        ctx.moveTo(side * 4, 0);
-        ctx.quadraticCurveTo(kneeX, kneeY, tipX, tipY);
-        ctx.strokeStyle = "rgba(226, 232, 240, 0.85)";
-        ctx.lineWidth = 1.6;
-        ctx.lineCap = "round";
-        ctx.stroke();
-      });
-    });
-
-    ctx.beginPath();
-    ctx.ellipse(0, -8, 6.5, 8.5, 0, 0, Math.PI * 2);
-    ctx.fillStyle = "#0f172a";
-    ctx.fill();
-    ctx.lineWidth = 1.2;
-    ctx.strokeStyle = "#38bdf8";
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.arc(0, 2, 4.5, 0, Math.PI * 2);
-    ctx.fillStyle = "#1e293b";
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.fillStyle = "#38bdf8";
-    ctx.beginPath();
-    ctx.arc(-1.8, 5, 1.1, 0, Math.PI * 2);
-    ctx.arc(1.8, 5, 1.1, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.restore();
-    requestAnimationFrame(drawSpider);
-  }
 
   requestAnimationFrame(drawSpider);
 }
@@ -1212,7 +1069,7 @@ function bindEvents() {
     }
   });
 
-  document.getElementById("chat-composer-form")?.addEventListener("submit", (e) => {
+  document.getElementById("chat-composer-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
     const thread = state.chats.find((t) => t.id === state.activeChatId);
     if (!thread) return;
@@ -1346,7 +1203,7 @@ function bindEvents() {
     state.wallet.transactions.unshift({
       id: `tx-${Date.now()}`,
       label: `Sent ${amount.toFixed(2)} SGT`,
-      detail: `To ${recipient}${memo ? ` · ${memo}` : ""}`,
+      detail: `To ${recipient}${memo ? ` Â· ${memo}` : ""}`,
       timeLabel: "Just now",
     });
 
@@ -1380,7 +1237,7 @@ function bindEvents() {
     const txEntry = {
       id: `tx-${Date.now()}` ,
       label: `Withdraw $${amountUsd.toFixed(2)}`,
-      detail: `${method.toUpperCase()} · ${destination}`,
+      detail: `${method.toUpperCase()} Â· ${destination}`,
       timeLabel: "Just now",
     };
     state.wallet.transactions.unshift(txEntry);
@@ -1400,7 +1257,7 @@ function bindEvents() {
       const refCode = apiResult.ok ? apiResult.data?.reference : "";
       const statusLabel = apiResult.ok ? apiResult.data?.status || "queued" : "";
       if (refCode) {
-        txEntry.detail = `${method.toUpperCase()} · ${destination} · ${refCode}`;
+        txEntry.detail = `${method.toUpperCase()} Â· ${destination} Â· ${refCode}`;
         saveJson(STORAGE_KEYS.wallet, state.wallet);
         renderWalletTab();
       }
@@ -1474,7 +1331,6 @@ document.addEventListener("DOMContentLoaded", () => {
   hydrateState();
   bindEvents();
   renderAll();
-  initDynamicSpider();
   registerServiceWorker();
 
   setInterval(() => {
