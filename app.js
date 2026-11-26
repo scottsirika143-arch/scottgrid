@@ -1162,3 +1162,207 @@ bindFeedComposer();
     subtitleEl.textContent = subtitleEl.textContent.replace(/Â·/g, "·");
   }
 })();
+
+function openGridCall(mode) {
+  const modal = document.getElementById("call-modal");
+  const titleEl = document.getElementById("call-modal-title");
+  const placeholderEl = document.getElementById("call-placeholder");
+  const videoEl = document.getElementById("local-call-video");
+  const micBtn = document.getElementById("toggle-mic-btn");
+  const camBtn = document.getElementById("toggle-cam-btn");
+
+  stopCallStream();
+
+  const isVideo = mode === "video";
+  state.micEnabled = true;
+  state.camEnabled = isVideo;
+
+  if (titleEl) {
+    titleEl.textContent = isVideo ? "Video Call · Mesh" : "Voice Call · Mesh";
+  }
+  if (placeholderEl) {
+    placeholderEl.style.display = "block";
+    placeholderEl.textContent = isVideo
+      ? "Starting camera & microphone..."
+      : "Connecting voice channel...";
+  }
+  if (videoEl) {
+    videoEl.style.display = isVideo ? "block" : "none";
+  }
+  if (micBtn) micBtn.textContent = "Mic On";
+  if (camBtn) {
+    camBtn.textContent = isVideo ? "Cam On" : "Cam Off";
+  }
+  if (modal) {
+    modal.style.display = "flex";
+  }
+
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    navigator.mediaDevices
+      .getUserMedia({ audio: true, video: isVideo })
+      .then((stream) => {
+        state.callStream = stream;
+        if (videoEl && isVideo) {
+          videoEl.srcObject = stream;
+          videoEl.style.display = "block";
+        }
+        if (placeholderEl) {
+          placeholderEl.textContent = isVideo
+            ? "Live video & voice active"
+            : "Voice call connected";
+          if (isVideo) placeholderEl.style.display = "none";
+        }
+      })
+      .catch(() => {
+        if (placeholderEl) {
+          placeholderEl.style.display = "block";
+          placeholderEl.textContent = isVideo
+            ? "Camera/mic blocked or unavailable — preview mode active"
+            : "Mic blocked or unavailable — voice call standby";
+        }
+      });
+  } else if (placeholderEl) {
+    placeholderEl.textContent = isVideo
+      ? "Video call preview ready"
+      : "Voice call ready";
+  }
+}
+
+function appendVoiceNoteToActiveThread(audioUrl) {
+  const targetId = state.activeChatId || (state.chats[0] && state.chats[0].id);
+  const thread = Array.isArray(state.chats)
+    ? state.chats.find((t) => t.id === targetId) || state.chats[0]
+    : null;
+  if (!thread) return;
+
+  if (!Array.isArray(thread.messages)) thread.messages = [];
+  const timeStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+  thread.messages.push({
+    id: `vn-${Date.now()}`,
+    sender: state.profile.displayName || "Scott",
+    text: "Voice note",
+    audioUrl,
+    time: timeStr,
+    outgoing: true,
+  });
+  thread.lastMessage = "Voice note";
+  thread.lastTime = timeStr;
+
+  saveJson(STORAGE_KEYS.chats, state.chats);
+  if (typeof renderChatsTab === "function") {
+    renderChatsTab();
+  }
+}
+
+function bindCallsAndVoiceNote() {
+  const voiceCallBtn = document.getElementById("start-voice-call-btn");
+  const videoCallBtn = document.getElementById("start-video-call-btn");
+  const endCallBtn = document.getElementById("end-call-btn");
+  const micBtn = document.getElementById("toggle-mic-btn");
+  const camBtn = document.getElementById("toggle-cam-btn");
+  const voiceNoteBtn = document.getElementById("record-voice-btn");
+
+  if (voiceCallBtn && !voiceCallBtn.dataset.sgBound) {
+    voiceCallBtn.dataset.sgBound = "1";
+    voiceCallBtn.addEventListener("click", () => openGridCall("voice"));
+  }
+
+  if (videoCallBtn && !videoCallBtn.dataset.sgBound) {
+    videoCallBtn.dataset.sgBound = "1";
+    videoCallBtn.addEventListener("click", () => openGridCall("video"));
+  }
+
+  if (endCallBtn && !endCallBtn.dataset.sgBound) {
+    endCallBtn.dataset.sgBound = "1";
+    endCallBtn.addEventListener("click", () => {
+      if (typeof closeCallModal === "function") {
+        closeCallModal();
+      } else {
+        stopCallStream();
+        const modal = document.getElementById("call-modal");
+        if (modal) modal.style.display = "none";
+      }
+    });
+  }
+
+  if (micBtn && !micBtn.dataset.sgBound) {
+    micBtn.dataset.sgBound = "1";
+    micBtn.addEventListener("click", () => {
+      state.micEnabled = !state.micEnabled;
+      if (state.callStream) {
+        state.callStream.getAudioTracks().forEach((track) => {
+          track.enabled = state.micEnabled;
+        });
+      }
+      micBtn.textContent = state.micEnabled ? "Mic On" : "Mic Muted";
+    });
+  }
+
+  if (camBtn && !camBtn.dataset.sgBound) {
+    camBtn.dataset.sgBound = "1";
+    camBtn.addEventListener("click", () => {
+      state.camEnabled = !state.camEnabled;
+      if (state.callStream) {
+        state.callStream.getVideoTracks().forEach((track) => {
+          track.enabled = state.camEnabled;
+        });
+      }
+      const videoEl = document.getElementById("local-call-video");
+      if (videoEl) {
+        videoEl.style.display = state.camEnabled ? "block" : "none";
+      }
+      camBtn.textContent = state.camEnabled ? "Cam On" : "Cam Off";
+    });
+  }
+
+  if (voiceNoteBtn && !voiceNoteBtn.dataset.sgBound) {
+    voiceNoteBtn.dataset.sgBound = "1";
+    voiceNoteBtn.addEventListener("click", async () => {
+      if (state.mediaRecorder && state.mediaRecorder.state === "recording") {
+        state.mediaRecorder.stop();
+        voiceNoteBtn.classList.remove("is-recording");
+        voiceNoteBtn.title = "Voice Note";
+        return;
+      }
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === "undefined") {
+        appendVoiceNoteToActiveThread("");
+        return;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        state.audioChunks = [];
+        const recorder = new MediaRecorder(stream);
+        state.mediaRecorder = recorder;
+
+        recorder.ondataavailable = (ev) => {
+          if (ev.data && ev.data.size > 0) {
+            state.audioChunks.push(ev.data);
+          }
+        };
+
+        recorder.onstop = () => {
+          stream.getTracks().forEach((t) => t.stop());
+          const blob = new Blob(state.audioChunks, { type: recorder.mimeType || "audio/webm" });
+          const reader = new FileReader();
+          reader.onload = () => {
+            appendVoiceNoteToActiveThread(String(reader.result || ""));
+          };
+          reader.readAsDataURL(blob);
+          state.mediaRecorder = null;
+          state.audioChunks = [];
+        };
+
+        recorder.start();
+        voiceNoteBtn.classList.add("is-recording");
+        voiceNoteBtn.title = "Stop Recording";
+      } catch {
+        appendVoiceNoteToActiveThread("");
+      }
+    });
+  }
+}
+
+bindCallsAndVoiceNote();
