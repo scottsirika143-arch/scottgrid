@@ -1129,3 +1129,36 @@ function bindFeedComposer() {
 }
 
 bindFeedComposer();
+(function stabilizeScottGridLayout() {
+  const styleId = "sg-layout-stabilizer";
+  if (!document.getElementById(styleId)) {
+    const style = document.createElement("style");
+    style.id = styleId;
+    style.textContent = `
+      html {
+        scrollbar-gutter: stable;
+        overflow-y: scroll;
+      }
+      body, #app-view, .sg-shell-inner, #home-panel, .sg-tab-pane {
+        overflow-x: hidden;
+        max-width: 100%;
+      }
+      #home-panel {
+        min-height: calc(100dvh - 165px);
+      }
+      .sg-icon-btn, .sg-nav-btn, button, a, label {
+        transform: none !important;
+        -webkit-tap-highlight-color: transparent;
+      }
+      .sg-icon-btn:active, .sg-nav-btn:active, button:active {
+        transform: none !important;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  const subtitleEl = document.getElementById("me-subtitle");
+  if (subtitleEl && subtitleEl.textContent.includes("Â·")) {
+    subtitleEl.textContent = subtitleEl.textContent.replace(/Â·/g, "·");
+  }
+})();
