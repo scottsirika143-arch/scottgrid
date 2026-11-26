@@ -1056,3 +1056,76 @@ function bindTopHeaderActions() {
 }
 
 bindTopHeaderActions();
+
+function bindFeedComposer() {
+  const form = document.getElementById("feed-post-form");
+  const inputEl = document.getElementById("feed-post-input");
+  const mediaInput = document.getElementById("feed-media-input");
+  const previewLabel = document.getElementById("feed-media-preview-label");
+  const statusEl = document.getElementById("feed-status");
+
+  if (mediaInput && !mediaInput.dataset.sgBound) {
+    mediaInput.dataset.sgBound = "1";
+    mediaInput.addEventListener("change", () => {
+      const file = mediaInput.files && mediaInput.files[0];
+      if (!file) {
+        state.pendingFeedMedia = null;
+        if (previewLabel) previewLabel.textContent = "";
+        return;
+      }
+
+      const isVideo = String(file.type || "").startsWith("video/");
+      const reader = new FileReader();
+      reader.onload = () => {
+        const mediaUrl = String(reader.result || "");
+        if (!mediaUrl) return;
+        state.pendingFeedMedia = {
+          mediaUrl,
+          mediaType: isVideo ? "video" : "image",
+          name: file.name || "Media",
+        };
+        if (previewLabel) {
+          previewLabel.textContent = `Attached: ${file.name}`;
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  if (form && !form.dataset.sgBound) {
+    form.dataset.sgBound = "1";
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const text = inputEl ? String(inputEl.value || "").trim() : "";
+      const media = state.pendingFeedMedia;
+
+      if (!text && !media) {
+        if (statusEl) statusEl.textContent = "Write a pulse or attach media first.";
+        return;
+      }
+
+      const newPulse = {
+        id: `pulse-${Date.now()}`,
+        author: state.profile.displayName || "Scott",
+        text,
+        mediaUrl: media ? media.mediaUrl : "",
+        mediaType: media ? media.mediaType : "",
+        timeLabel: "Just now",
+        createdAt: Date.now(),
+      };
+
+      state.feed = [newPulse, ...(Array.isArray(state.feed) ? state.feed : [])];
+      state.pendingFeedMedia = null;
+      saveJson(STORAGE_KEYS.feed, state.feed);
+
+      if (inputEl) inputEl.value = "";
+      if (mediaInput) mediaInput.value = "";
+      if (previewLabel) previewLabel.textContent = "";
+      if (statusEl) statusEl.textContent = "Pulse broadcast to the grid.";
+
+      renderFeedTab();
+    });
+  }
+}
+
+bindFeedComposer();
