@@ -3021,3 +3021,46 @@ import { createClient } from "@supabase/supabase-js";
     });
 })();
 
+
+// --- SCOTTGRID MY STORY SAFE FILTER START ---
+(() => {
+  const MY_STORY_ONLY = true;
+  let scheduled = false;
+
+  function applySafeMyStoryFilter() {
+    scheduled = false;
+    if (!MY_STORY_ONLY) return;
+
+    const allEls = Array.from(document.querySelectorAll("div, section, ul, ol, nav"));
+    for (const strip of allEls) {
+      if (strip.closest("header, footer, [role='navigation']")) continue;
+      if (strip.offsetHeight === 0 || strip.offsetHeight > 220) continue;
+
+      const children = Array.from(strip.children).filter((el) => {
+        const rect = el.getBoundingClientRect();
+        return rect.width > 30 && rect.width < 220 && rect.height > 30 && rect.height < 220;
+      });
+
+      if (children.length < 2) continue;
+      const hasMyStoryChild = children.some((child) => /\bmy story\b/i.test(child.textContent || ""));
+      if (!hasMyStoryChild) continue;
+
+      for (const child of children) {
+        const isMyStory = /\bmy story\b/i.test(child.textContent || "");
+        child.style.display = isMyStory ? "" : "none";
+      }
+    }
+  }
+
+  function scheduleFilter() {
+    if (scheduled) return;
+    scheduled = true;
+    requestAnimationFrame(applySafeMyStoryFilter);
+  }
+
+  window.addEventListener("load", scheduleFilter);
+  window.addEventListener("hashchange", scheduleFilter);
+  window.addEventListener("popstate", scheduleFilter);
+  setInterval(scheduleFilter, 1000);
+})();
+// --- SCOTTGRID MY STORY SAFE FILTER END ---
