@@ -3020,3 +3020,132 @@ import { createClient } from "@supabase/supabase-js";
       });
     });
 })();
+
+import { createClient } from "@supabase/supabase-js";
+
+(() => {
+  const SUPABASE_URL = "https://yjcxhhzpfrezpxnxmvxf.supabase.co";
+  const SUPABASE_KEY = "YOUR_SUPABASE_PUBLISHABLE_KEY";
+  const PRESENCE_CHANNEL = "scottgrid:global-radar";
+
+  if (!SUPABASE_URL.startsWith("http") || SUPABASE_KEY.startsWith("YOUR_")) return;
+  if (!window.ScottGridPresence || typeof window.ScottGridPresence.upsertPeers !== "function") return;
+
+  const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+  const clientKey = `sg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  let tableRows = [];
+  let liveHandles = new Set();
+
+  function getActiveUserInfo() {
+    const prof = typeof state !== "undefined" && state.profile ? state.profile : {};
+    const rawHandle = String(prof.handle || "@scottsirika143").trim();
+    const handle = rawHandle.startsWith("@") ? rawHandle : `@${rawHandle}`;
+    const name = String(prof.displayName || handle.replace(/^@/, "") || "Scott").trim();
+    const selfBtn = document.getElementById("sg-self-online-btn");
+    const online = selfBtn ? !/Offline$/i.test(selfBtn.textContent || "") : true;
+    return { id: clientKey, name, handle, online, lastSeen: Date.now() };
+  }
+
+  function recomputePeers() {
+    const me = getActiveUserInfo();
+    const byHandle = new Map();
+
+    for (const row of tableRows) {
+      if (!row || !row.handle) continue;
+      const h = String(row.handle).trim();
+      const key = h.toLowerCase();
+      if (key === me.handle.toLowerCase()) continue;
+      byHandle.set(key, {
+        id: row.handle,
+        name: row.display_name || h,
+        handle: h,
+        online: liveHandles.has(key),
+        lastSeen: row.last_seen ? Date.parse(row.last_seen) || Date.now() : Date.now()
+      });
+    }
+
+    window.ScottGridPresence.upsertPeers(Array.from(byHandle.values()));
+  }
+
+  async function upsertSelfToTable() {
+    const me = getActiveUserInfo();
+    if (!me.handle) return;
+    await supabase.from("grid_users").upsert(
+      {
+        handle: me.handle,
+        display_name: me.name,
+        last_seen: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      },
+      { onConflict: "handle" }
+    );
+  }
+
+  async function fetchTableUsers() {
+    const { data, error } = await supabase
+      .from("grid_users")
+      .select("handle, display_name, last_seen")
+      .order("last_seen", { ascending: false })
+      .limit(100);
+
+    if (!error && Array.isArray(data)) {
+      tableRows = data;
+      recomputePeers();
+    }
+  }
+
+  const channel = supabase.channel(PRESENCE_CHANNEL, {
+    config: { presence: { key: clientKey } }
+  });
+
+  function syncPresenceHandles() {
+    const rawState = channel.presenceState();
+    const nextLive = new Set();
+
+    Object.entries(rawState || {}).forEach(([key, metas]) => {
+      if (key === clientKey) return;
+      const latest = Array.isArray(metas) && metas.length ? metas[metas.length - 1] : null;
+      if (!latest || !latest.handle) return;
+      if (latest.online !== false) {
+        nextLive.add(String(latest.handle).trim().toLowerCase());
+      }
+    });
+
+    liveHandles = nextLive;
+    recomputePeers();
+  }
+
+  channel
+    .on("presence", { event: "sync" }, syncPresenceHandles)
+    .on("presence", { event: "join" }, syncPresenceHandles)
+    .on("presence", { event: "leave" }, syncPresenceHandles)
+    .subscribe(async (status) => {
+      if (status !== "SUBSCRIBED") return;
+      const me = getActiveUserInfo();
+      await channel.track({
+        id: clientKey,
+        name: me.name,
+        handle: me.handle,
+        online: me.online,
+        lastSeen: new Date().toISOString()
+      });
+    });
+
+  supabase
+    .channel("scottgrid:grid-users-changes")
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "grid_users" },
+      () => {
+        fetchTableUsers();
+      }
+    )
+    .subscribe();
+
+  upsertSelfToTable().then(fetchTableUsers);
+  setInterval(() => {
+    upsertSelfToTable();
+    fetchTableUsers();
+  }, 30000);
+})();
