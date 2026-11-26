@@ -185,9 +185,32 @@ function syncWalletTicks(now = Date.now()) {
   saveJson(STORAGE_KEYS.wallet, state.wallet);
 }
 
+function deriveIdentityFromEmail(email) {
+  const clean = String(email || "").trim().toLowerCase();
+  const localPart = clean.includes("@") ? clean.split("@")[0] : clean;
+  const tokens = localPart.split(/[^a-z0-9]+/).filter(Boolean);
+  const displayName = tokens.length
+    ? tokens.map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ')
+    : "Member";
+  const handleBase = tokens.join("").replace(/[^a-z0-9_]/g, "") || "member";
+  return {
+    displayName,
+    handle: `@${handleBase}`,
+    email: clean,
+  };
+}
+
+function getProfileStorageKey(email) {
+  const clean = String(email || "").trim().toLowerCase();
+  return clean ? `${STORAGE_KEYS.profile}:${clean}` : STORAGE_KEYS.profile;
+}
+
 function hydrateState() {
   const session = loadJson(STORAGE_KEYS.session, null);
-  const savedProfile = loadJson(STORAGE_KEYS.profile, null);
+  const activeEmail = String(session?.email || "").trim().toLowerCase();
+  const scopedProfile = activeEmail ? loadJson(getProfileStorageKey(activeEmail), null) : null;
+  const fallbackProfile = loadJson(STORAGE_KEYS.profile, null);
+  const savedProfile = scopedProfile || (!activeEmail ? fallbackProfile : null);
   const savedWallet = loadJson(STORAGE_KEYS.wallet, null);
   const savedStatuses = loadJson(STORAGE_KEYS.statuses, []);
   const savedFeed = loadJson(STORAGE_KEYS.feed, []);
@@ -196,21 +219,22 @@ function hydrateState() {
 
   state.authenticated = Boolean(session && session.signedIn);
 
-  const mergedName = savedProfile?.displayName;
-  const mergedHandle = savedProfile?.handle;
+  const derived = activeEmail ? deriveIdentityFromEmail(activeEmail) : null;
+  const rawName = savedProfile?.displayName || derived?.displayName || "";
+  const rawHandle = savedProfile?.handle || derived?.handle || "";
   const normalizedName =
-    !mergedName || mergedName.trim().toLowerCase() === "member" ? "Scott" : mergedName;
+    !rawName || rawName.trim().toLowerCase() === "member" ? "Member" : rawName;
   const normalizedHandle =
-    !mergedHandle || mergedHandle.trim().toLowerCase() === "@member" ? "@scott" : mergedHandle;
+    !rawHandle || rawHandle.trim().toLowerCase() === "@member" ? "@member" : rawHandle;
 
   state.profile = {
     ...DEFAULT_PROFILE,
     ...(savedProfile || {}),
     displayName: normalizedName,
     handle: normalizedHandle,
-    email: session?.email || savedProfile?.email || "",
+    email: activeEmail || savedProfile?.email || "",
   };
-  saveJson(STORAGE_KEYS.profile, state.profile);
+  saveJson(getProfileStorageKey(state.profile.email), state.profile);
 
   const now = Date.now();
   const baseWallet = createDefaultWallet(now);
@@ -234,7 +258,7 @@ function hydrateState() {
           ...item,
           author:
             !item.author || String(item.author).trim().toLowerCase() === "member"
-              ? "Scott"
+              ? state.profile.displayName
               : item.author,
         }))
     : [];
@@ -254,14 +278,23 @@ function hydrateState() {
 
 function setAuthState(signedIn, email = "") {
   state.authenticated = signedIn;
-  if (email) {
-    state.profile.email = email;
+  const cleanEmail = String(email || state.profile.email || "").trim().toLowerCase();
+  if (cleanEmail) {
+    const existingForEmail = loadJson(getProfileStorageKey(cleanEmail), null);
+    const derived = deriveIdentityFromEmail(cleanEmail);
+    state.profile = {
+      ...DEFAULT_PROFILE,
+      ...(existingForEmail || {}),
+      displayName: existingForEmail?.displayName || derived.displayName,
+      handle: existingForEmail?.handle || derived.handle,
+      email: cleanEmail,
+    };
   }
   saveJson(STORAGE_KEYS.session, {
     signedIn,
-    email: state.profile.email || email || "",
+    email: cleanEmail,
   });
-  saveJson(STORAGE_KEYS.profile, state.profile);
+  saveJson(getProfileStorageKey(cleanEmail), state.profile);
   state.wallet.lastEarnedAt = Date.now();
   saveJson(STORAGE_KEYS.wallet, state.wallet);
   renderAll();
@@ -998,7 +1031,11 @@ function bindEvents() {
   });
 
   document.getElementById("google-signin-btn")?.addEventListener("click", () => {
-    const email = (emailInput?.value || "scott@scottgrid.app").trim();
+    const email = (emailInput?.value || "").trim();
+    if (!email) {
+      if (statusNote) statusNote.textContent = "Enter your email to continue.";
+      return;
+    }
     setAuthState(true, email);
   });
 
@@ -1388,7 +1425,7 @@ function bindEvents() {
     const reader = new FileReader();
     reader.onload = () => {
       state.profile.avatarDataUrl = String(reader.result || "");
-      saveJson(STORAGE_KEYS.profile, state.profile);
+      saveJson(getProfileStorageKey(state.profile.email), state.profile);
       renderHeaderAndNearby();
       renderStatusTab();
     };
@@ -1397,19 +1434,19 @@ function bindEvents() {
 
   document.getElementById("profile-form")?.addEventListener("submit", (e) => {
     e.preventDefault();
-    const handleVal = (document.getElementById("handle")?.value || "@scott").trim();
+    const fallbackDerived = deriveIdentityFromEmail(state.profile.email || "");
+    const handleVal = (document.getElementById("handle")?.value || fallbackDerived.handle || "@member").trim();
     const nameVal = (document.getElementById("display-name")?.value || "").trim();
     const bioVal = (document.getElementById("bio")?.value || "").trim();
     const ghostVal = Boolean(document.getElementById("ghost-mode")?.checked);
     const currencyVal = document.getElementById("display-currency")?.value || "USD";
 
     state.profile.handle = handleVal.startsWith("@") ? handleVal : `@${handleVal}`;
-    state.profile.displayName = nameVal || "Scott";
+    state.profile.displayName = nameVal || fallbackDerived.displayName || "Member";
     state.profile.bio = bioVal;
     state.profile.ghostMode = ghostVal;
     state.profile.displayCurrency = currencyVal;
-
-    saveJson(STORAGE_KEYS.profile, state.profile);
+    saveJson(getProfileStorageKey(state.profile.email), state.profile);
     const profStatus = document.getElementById("profile-status");
     if (profStatus) profStatus.textContent = "Profile changes saved.";
     renderHeaderAndNearby();
