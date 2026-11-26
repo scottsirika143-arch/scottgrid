@@ -2129,3 +2129,228 @@ syncVideoCallModal();
     });
   }
 })();
+
+(() => {
+  const PULSE_TAGS = ["Signal", "Drop", "Alert", "Note"];
+  const FILTER_TABS = ["All", "Saved", ...PULSE_TAGS];
+  let activeFilter = "All";
+  let selectedTag = "Signal";
+
+  function getFeedList() {
+    if (typeof state !== "undefined" && Array.isArray(state.feed)) {
+      return state.feed;
+    }
+    return [];
+  }
+
+  function persistFeed() {
+    if (typeof state !== "undefined" && Array.isArray(state.feed)) {
+      if (typeof saveJson === "function" && typeof STORAGE_KEYS !== "undefined") {
+        saveJson(STORAGE_KEYS.feed, state.feed);
+      }
+    }
+  }
+
+  function ensureTagPicker() {
+    const form = document.getElementById("feed-post-form");
+    if (!form || document.getElementById("sg-feed-tag-picker")) return;
+
+    const wrap = document.createElement("div");
+    wrap.id = "sg-feed-tag-picker";
+    wrap.className = "sg-feed-toolbar";
+
+    PULSE_TAGS.forEach((tag) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "sg-feed-pill" + (tag === selectedTag ? " is-active" : "");
+      btn.dataset.pulseTag = tag;
+      btn.textContent = tag;
+      btn.addEventListener("click", () => {
+        selectedTag = tag;
+        wrap.querySelectorAll("[data-pulse-tag]").forEach((el) => {
+          el.classList.toggle("is-active", el.dataset.pulseTag === selectedTag);
+        });
+      });
+      wrap.appendChild(btn);
+    });
+
+    form.insertBefore(wrap, form.firstChild);
+  }
+
+  function ensureFilterBar() {
+    const itemsEl = document.getElementById("feed-items");
+    if (!itemsEl || document.getElementById("sg-feed-filter-bar")) return;
+
+    const bar = document.createElement("div");
+    bar.id = "sg-feed-filter-bar";
+    bar.className = "sg-feed-toolbar";
+
+    FILTER_TABS.forEach((tab) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "sg-feed-pill" + (tab === activeFilter ? " is-active" : "");
+      btn.dataset.feedFilter = tab;
+      btn.textContent = tab;
+      btn.addEventListener("click", () => {
+        activeFilter = tab;
+        bar.querySelectorAll("[data-feed-filter]").forEach((el) => {
+          el.classList.toggle("is-active", el.dataset.feedFilter === activeFilter);
+        });
+        enhanceFeedCards();
+      });
+      bar.appendChild(btn);
+    });
+
+    itemsEl.parentNode.insertBefore(bar, itemsEl);
+  }
+
+  function enhanceFeedCards() {
+    ensureTagPicker();
+    ensureFilterBar();
+
+    const itemsEl = document.getElementById("feed-items");
+    const emptyEl = document.getElementById("feed-empty");
+    if (!itemsEl) return;
+
+    const feed = getFeedList();
+    const cards = Array.from(itemsEl.querySelectorAll(".sg-feed-card"));
+    let visibleCount = 0;
+
+    cards.forEach((card, idx) => {
+      const item = feed[idx];
+      if (!item) return;
+
+      if (!item.id) item.id = `pulse-${idx}-${Date.now()}`;
+      if (!item.tag) item.tag = "Signal";
+      if (typeof item.acks !== "number") item.acks = 0;
+      if (typeof item.acked !== "boolean") item.acked = false;
+      if (typeof item.saved !== "boolean") item.saved = false;
+
+      const query =
+        typeof state !== "undefined" && state.searchQuery
+          ? String(state.searchQuery).toLowerCase().trim()
+          : "";
+
+      const matchesQuery =
+        !query ||
+        String(item.text || "").toLowerCase().includes(query) ||
+        String(item.author || "").toLowerCase().includes(query) ||
+        String(item.tag || "").toLowerCase().includes(query);
+
+      const matchesFilter =
+        activeFilter === "All" ||
+        (activeFilter === "Saved" && item.saved) ||
+        item.tag === activeFilter;
+
+      const show = matchesQuery && matchesFilter;
+      card.style.display = show ? "" : "none";
+      if (show) visibleCount += 1;
+
+      const metaEl = card.querySelector(".sg-chat-meta");
+      if (metaEl && !card.querySelector(".sg-feed-tag-badge")) {
+        const badge = document.createElement("span");
+        badge.className = "sg-feed-tag-badge";
+        badge.textContent = item.tag;
+        metaEl.appendChild(badge);
+      } else if (card.querySelector(".sg-feed-tag-badge")) {
+        card.querySelector(".sg-feed-tag-badge").textContent = item.tag;
+      }
+
+      if (!card.querySelector(".sg-feed-actions")) {
+        const actions = document.createElement("div");
+        actions.className = "sg-feed-actions";
+
+        const ackBtn = document.createElement("button");
+        ackBtn.type = "button";
+        ackBtn.className = "sg-feed-action-btn" + (item.acked ? " is-active" : "");
+        ackBtn.textContent = `Ack (${item.acks})`;
+        ackBtn.addEventListener("click", () => {
+          item.acked = !item.acked;
+          item.acks = Math.max(0, item.acks + (item.acked ? 1 : -1));
+          persistFeed();
+          enhanceFeedCards();
+        });
+
+        const saveBtn = document.createElement("button");
+        saveBtn.type = "button";
+        saveBtn.className = "sg-feed-action-btn" + (item.saved ? " is-active" : "");
+        saveBtn.textContent = item.saved ? "Saved" : "Save";
+        saveBtn.addEventListener("click", () => {
+          item.saved = !item.saved;
+          persistFeed();
+          enhanceFeedCards();
+        });
+
+        const copyBtn = document.createElement("button");
+        copyBtn.type = "button";
+        copyBtn.className = "sg-feed-action-btn";
+        copyBtn.textContent = "Copy";
+        copyBtn.addEventListener("click", async () => {
+          const content = String(item.text || "").trim();
+          const statusEl = document.getElementById("feed-status");
+          if (!content) return;
+          try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              await navigator.clipboard.writeText(content);
+            }
+            if (statusEl) statusEl.textContent = "Pulse copied to clipboard.";
+          } catch (_) {
+            if (statusEl) statusEl.textContent = "Pulse ready to copy.";
+          }
+        });
+
+        actions.appendChild(ackBtn);
+        actions.appendChild(saveBtn);
+        actions.appendChild(copyBtn);
+        card.appendChild(actions);
+      } else {
+        const btns = card.querySelectorAll(".sg-feed-action-btn");
+        if (btns[0]) {
+          btns[0].classList.toggle("is-active", Boolean(item.acked));
+          btns[0].textContent = `Ack (${item.acks})`;
+        }
+        if (btns[1]) {
+          btns[1].classList.toggle("is-active", Boolean(item.saved));
+          btns[1].textContent = item.saved ? "Saved" : "Save";
+        }
+      }
+    });
+
+    if (emptyEl && feed.length > 0) {
+      emptyEl.style.display = visibleCount === 0 ? "block" : "none";
+    }
+  }
+
+  const form = document.getElementById("feed-post-form");
+  if (form) {
+    form.addEventListener("submit", () => {
+      setTimeout(() => {
+        const feed = getFeedList();
+        if (feed[0] && !feed[0].tag) {
+          feed[0].tag = selectedTag;
+          feed[0].acks = 0;
+          feed[0].acked = false;
+          feed[0].saved = false;
+          persistFeed();
+        }
+        enhanceFeedCards();
+      }, 30);
+    }, true);
+  }
+
+  const observer = new MutationObserver(() => {
+    if (document.getElementById("feed-items") || document.getElementById("feed-post-form")) {
+      enhanceFeedCards();
+    }
+  });
+
+  if (document.body) {
+    observer.observe(document.body, { childList: true, subtree: true });
+    enhanceFeedCards();
+  } else {
+    document.addEventListener("DOMContentLoaded", () => {
+      observer.observe(document.body, { childList: true, subtree: true });
+      enhanceFeedCards();
+    });
+  }
+})();
