@@ -860,3 +860,54 @@ function renderAll() {
   switchTab(state.activeTab);
 }
 
+
+function handleAuthSubmit(mode = "signin") {
+  const emailEl = document.getElementById("email");
+  const passEl = document.getElementById("password");
+  const statusEl = document.getElementById("auth-status");
+
+  const email = emailEl ? String(emailEl.value || "").trim().toLowerCase() : "";
+  const password = passEl ? String(passEl.value || "").trim() : "";
+
+  if (!email) {
+    if (statusEl) statusEl.textContent = "Enter an email to continue.";
+    return;
+  }
+
+  if (mode === "signup" && password && password.length < 4) {
+    if (statusEl) statusEl.textContent = "Use at least 4 characters for password.";
+    return;
+  }
+
+  if (statusEl) {
+    statusEl.textContent = mode === "signup" ? "Creating ScottGrid account..." : "Entering ScottGrid...";
+  }
+
+  setAuthState(true, email);
+}
+
+function bindAuthEvents() {
+  const signInBtn = document.getElementById("sign-in-btn");
+  const signUpBtn = document.getElementById("sign-up-btn");
+  const googleBtn = document.getElementById("google-signin-btn");
+
+  if (signInBtn) {
+    signInBtn.addEventListener("click", () => handleAuthSubmit("signin"));
+  }
+
+  if (signUpBtn) {
+    signUpBtn.addEventListener("click", () => handleAuthSubmit("signup"));
+  }
+
+  if (googleBtn) {
+    googleBtn.addEventListener("click", () => {
+      const emailEl = document.getElementById("email");
+      const currentEmail = emailEl ? String(emailEl.value || "").trim().toLowerCase() : "";
+      setAuthState(true, currentEmail || "scott@scottgrid.app");
+    });
+  }
+}
+
+hydrateState();
+bindAuthEvents();
+renderAll();
