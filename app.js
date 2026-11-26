@@ -2963,64 +2963,7 @@ syncVideoCallModal();
   }
 })();
 
-import { createClient } from "@supabase/supabase-js";
-
-(() => {
-  const SUPABASE_URL = "YOUR_SUPABASE_URL";
-  const SUPABASE_KEY = "YOUR_SUPABASE_PUBLISHABLE_KEY";
-  const PRESENCE_CHANNEL = "scottgrid:global-radar";
-
-  if (!SUPABASE_URL.startsWith("http") || SUPABASE_KEY.startsWith("YOUR_")) return;
-  if (!window.ScottGridPresence || typeof window.ScottGridPresence.upsertPeers !== "function") return;
-
-  const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-  const clientKey = `sg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-  const channel = supabase.channel(PRESENCE_CHANNEL, {
-    config: { presence: { key: clientKey } }
-  });
-
-  function syncPresenceState() {
-    const rawState = channel.presenceState();
-    const peers = [];
-
-    Object.entries(rawState || {}).forEach(([key, metas]) => {
-      if (key === clientKey) return;
-      const latest = Array.isArray(metas) && metas.length ? metas[metas.length - 1] : null;
-      if (!latest || !latest.handle) return;
-
-      peers.push({
-        id: latest.id || key,
-        name: latest.name || latest.handle,
-        handle: latest.handle,
-        online: latest.online !== false,
-        lastSeen: latest.lastSeen ? Date.parse(latest.lastSeen) || Date.now() : Date.now()
-      });
-    });
-
-    window.ScottGridPresence.upsertPeers(peers);
-  }
-
-  channel
-    .on("presence", { event: "sync" }, syncPresenceState)
-    .on("presence", { event: "join" }, syncPresenceState)
-    .on("presence", { event: "leave" }, syncPresenceState)
-    .subscribe(async (status) => {
-      if (status !== "SUBSCRIBED") return;
-      const prof = typeof state !== "undefined" && state.profile ? state.profile : {};
-      const selfBtn = document.getElementById("sg-self-online-btn");
-      const isOnline = selfBtn ? !/Offline$/i.test(selfBtn.textContent || "") : true;
-
-      await channel.track({
-        id: clientKey,
-        name: String(prof.displayName || prof.handle || "Scott").trim() || "Scott",
-        handle: String(prof.handle || "@scott").trim() || "@scott",
-        online: isOnline,
-        lastSeen: new Date().toISOString()
-      });
-    });
-})();
-
+// --- SCOTTGRID SUPABASE SYNC START ---
 import { createClient } from "@supabase/supabase-js";
 
 (() => {
@@ -3149,3 +3092,4 @@ import { createClient } from "@supabase/supabase-js";
     fetchTableUsers();
   }, 30000);
 })();
+// --- SCOTTGRID SUPABASE SYNC END ---
