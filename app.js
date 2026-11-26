@@ -3064,3 +3064,211 @@ import { createClient } from "@supabase/supabase-js";
   setInterval(scheduleFilter, 1000);
 })();
 // --- SCOTTGRID MY STORY SAFE FILTER END ---
+
+// --- SCOTTGRID STORY COMPOSER & COMMENTS START ---
+(() => {
+  let pendingDraft = null;
+  let viewerQueue = [];
+  let viewerIndex = 0;
+
+  function ensureComposerAndCommentUi() {
+    const storyModal = document.getElementById("story-modal");
+    if (storyModal && !document.getElementById("sg-story-controls")) {
+      const box = storyModal.firstElementChild || storyModal;
+      const controls = document.createElement("div");
+      controls.id = "sg-story-controls";
+      controls.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:10px;";
+      controls.innerHTML = `
+        <button id="sg-story-prev" type="button">Prev</button>
+        <span id="sg-story-counter" style="font-size:12px;opacity:0.8;"></span>
+        <button id="sg-story-next" type="button">Next</button>
+      `;
+
+      const commentsWrap = document.createElement("div");
+      commentsWrap.id = "sg-story-comments-wrap";
+      commentsWrap.style.cssText = "margin-top:12px;border-top:1px solid rgba(255,255,255,0.14);padding-top:10px;";
+      commentsWrap.innerHTML = `
+        <div id="sg-story-comments-list" style="max-height:140px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;margin-bottom:8px;"></div>
+        <form id="sg-story-comment-form" style="display:flex;gap:6px;">
+          <input id="sg-story-comment-input" type="text" placeholder="Say something or comment..." style="flex:1;padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:rgba(0,0,0,0.35);color:#fff;" />
+          <button type="submit">Post</button>
+        </form>
+      `;
+
+      box.appendChild(controls);
+      box.appendChild(commentsWrap);
+
+      document.getElementById("sg-story-prev")?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (viewerQueue.length > 1) {
+          viewerIndex = (viewerIndex - 1 + viewerQueue.length) % viewerQueue.length;
+          renderViewerSlide();
+        }
+      });
+
+      document.getElementById("sg-story-next")?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (viewerQueue.length > 1) {
+          viewerIndex = (viewerIndex + 1) % viewerQueue.length;
+          renderViewerSlide();
+        }
+      });
+
+      document.getElementById("sg-story-comment-form")?.addEventListener("submit", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const input = document.getElementById("sg-story-comment-input");
+        const text = (input?.value || "").trim();
+        const current = viewerQueue[viewerIndex];
+        if (!text || !current || typeof state === "undefined") return;
+
+        const target = (state.statuses || []).find((s) => s.id === current.id) || current;
+        if (!Array.isArray(target.comments)) target.comments = [];
+        const author = (state.profile && (state.profile.displayName || state.profile.handle)) || "Scott";
+        target.comments.push({ author, text, createdAt: Date.now() });
+        if (typeof saveJson === "function" && typeof STORAGE_KEYS !== "undefined") {
+          saveJson(STORAGE_KEYS.statuses, state.statuses);
+        }
+        input.value = "";
+        renderViewerSlide();
+      });
+    }
+
+    if (!document.getElementById("sg-story-composer-modal")) {
+      const comp = document.createElement("div");
+      comp.id = "sg-story-composer-modal";
+      comp.style.cssText = "display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.78);align-items:center;justify-content:center;padding:16px;";
+      comp.innerHTML = `
+        <div style="width:100%;max-width:420px;background:#10182b;color:#fff;border:1px solid rgba(255,255,255,0.16);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <strong>New Status</strong>
+            <button id="sg-composer-cancel" type="button">Cancel</button>
+          </div>
+          <div id="sg-composer-preview" style="display:flex;justify-content:center;align-items:center;max-height:260px;overflow:hidden;border-radius:10px;background:#080d18;"></div>
+          <input id="sg-composer-caption" type="text" placeholder="Say something about this photo or video..." style="padding:10px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:rgba(0,0,0,0.35);color:#fff;" />
+          <button id="sg-composer-publish" type="button" style="padding:10px 14px;border-radius:8px;font-weight:600;cursor:pointer;">Post Status</button>
+        </div>
+      `;
+      document.body.appendChild(comp);
+
+      document.getElementById("sg-composer-cancel")?.addEventListener("click", () => {
+        pendingDraft = null;
+        comp.style.display = "none";
+      });
+
+      document.getElementById("sg-composer-publish")?.addEventListener("click", () => {
+        if (!pendingDraft || typeof state === "undefined") return;
+        const capInput = document.getElementById("sg-composer-caption");
+        const caption = (capInput?.value || "").trim();
+        const item = {
+          ...pendingDraft,
+          caption,
+          comments: []
+        };
+        state.statuses = [item, ...(Array.isArray(state.statuses) ? state.statuses : [])];
+        if (typeof saveJson === "function" && typeof STORAGE_KEYS !== "undefined") {
+          saveJson(STORAGE_KEYS.statuses, state.statuses);
+        }
+        pendingDraft = null;
+        if (capInput) capInput.value = "";
+        comp.style.display = "none";
+        if (typeof renderStatusTab === "function") renderStatusTab();
+      });
+    }
+  }
+
+  function renderViewerSlide() {
+    ensureComposerAndCommentUi();
+    const current = viewerQueue[viewerIndex];
+    if (!current) return;
+
+    const modal = document.getElementById("story-modal");
+    const authorEl = document.getElementById("story-viewer-author");
+    const bodyEl = document.getElementById("story-viewer-body");
+    const counterEl = document.getElementById("sg-story-counter");
+    const listEl = document.getElementById("sg-story-comments-list");
+
+    if (authorEl) authorEl.textContent = current.author || "Scott";
+    if (bodyEl && typeof escapeHtml === "function") {
+      const mediaHtml =
+        current.mediaType === "video"
+          ? `<video src="${escapeHtml(current.mediaUrl)}" class="sg-story-preview-media" controls autoplay playsinline></video>`
+          : current.mediaUrl
+          ? `<img src="${escapeHtml(current.mediaUrl)}" alt="Story" class="sg-story-preview-media" />`
+          : "";
+      bodyEl.innerHTML = `
+        ${mediaHtml}
+        ${current.caption ? `<p class="sg-mt-10">${escapeHtml(current.caption)}</p>` : ""}
+        <p class="sg-muted-caption sg-mt-10">${escapeHtml(current.timeLabel || "Active 24h status")}</p>
+      `;
+    }
+
+    if (counterEl) {
+      counterEl.textContent = viewerQueue.length ? `${viewerIndex + 1} / ${viewerQueue.length}` : "1 / 1";
+    }
+
+    if (listEl && typeof escapeHtml === "function") {
+      const comments = Array.isArray(current.comments) ? current.comments : [];
+      listEl.innerHTML = comments.length
+        ? comments.map((c) => `<div style="font-size:13px;background:rgba(255,255,255,0.06);padding:6px 8px;border-radius:6px;"><strong>${escapeHtml(c.author || "User")}:</strong> ${escapeHtml(c.text || "")}</div>`).join("")
+        : `<div style="font-size:12px;opacity:0.65;">No comments yet. Be the first to reply.</div>`;
+    }
+
+    if (modal) modal.style.display = "flex";
+  }
+
+  window.addEventListener("DOMContentLoaded", () => {
+    ensureComposerAndCommentUi();
+    const mediaInput = document.getElementById("status-media-input");
+    if (mediaInput) {
+      mediaInput.setAttribute("accept", "image/*,video/*");
+    }
+  });
+
+  document.addEventListener("change", (e) => {
+    const input = e.target;
+    if (!input || input.id !== "status-media-input") return;
+    const file = input.files && input.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      ensureComposerAndCommentUi();
+      const mediaType = file.type && file.type.startsWith("video/") ? "video" : "image";
+      const author = (typeof state !== "undefined" && state.profile && (state.profile.displayName || state.profile.handle)) || "Scott";
+      pendingDraft = {
+        id: `story-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        author,
+        mediaUrl: String(reader.result || ""),
+        mediaType,
+        timeLabel: "Just now · Active 24h status",
+        createdAt: Date.now(),
+        comments: []
+      };
+
+      const comp = document.getElementById("sg-story-composer-modal");
+      const preview = document.getElementById("sg-composer-preview");
+      const capInput = document.getElementById("sg-composer-caption");
+      if (capInput) capInput.value = "";
+      if (preview && typeof escapeHtml === "function") {
+        preview.innerHTML =
+          mediaType === "video"
+            ? `<video src="${escapeHtml(pendingDraft.mediaUrl)}" controls playsinline style="max-height:260px;max-width:100%;"></video>`
+            : `<img src="${escapeHtml(pendingDraft.mediaUrl)}" alt="Preview" style="max-height:260px;max-width:100%;object-fit:contain;" />`;
+      }
+      if (comp) comp.style.display = "flex";
+    };
+    reader.readAsDataURL(file);
+  }, true);
+
+  document.addEventListener("click", (e) => {
+    const trigger = e.target.closest("#my-story-trigger");
+    if (!trigger || typeof state === "undefined" || !Array.isArray(state.statuses) || state.statuses.length === 0) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    viewerQueue = [...state.statuses];
+    viewerIndex = 0;
+    renderViewerSlide();
+  }, true);
+})();
+// --- SCOTTGRID STORY COMPOSER & COMMENTS END ---
