@@ -2733,3 +2733,232 @@ syncVideoCallModal();
     });
   }
 })();
+
+(() => {
+  const PRESENCE_KEY = "scottgrid.real_grid_sessions.v1";
+  const SELF_ONLINE_KEY = "scottgrid.self_online.v1";
+  const CHANNEL_NAME = "scottgrid_presence_v1";
+  const SESSION_ID = `sess-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+  let remotePeers = [];
+  let selfOnline = localStorage.getItem(SELF_ONLINE_KEY) !== "false";
+  let timerId = null;
+
+  function getSelfProfile() {
+    const prof = typeof state !== "undefined" && state.profile ? state.profile : {};
+    const name = String(prof.displayName || prof.handle || "Scott").trim() || "Scott";
+    const handle = String(prof.handle || "@scott").trim() || "@scott";
+    return { id: SESSION_ID, name, handle, online: Boolean(selfOnline), lastSeen: Date.now() };
+  }
+
+  function loadSessions() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(PRESENCE_KEY) || "[]");
+      return Array.isArray(raw) ? raw : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function saveSessions(list) {
+    try {
+      localStorage.setItem(PRESENCE_KEY, JSON.stringify(list.slice(0, 50)));
+    } catch (_) {}
+  }
+
+  function publishSelfPresence() {
+    const me = getSelfProfile();
+    const existing = loadSessions().filter((s) => s.id !== me.id && Date.now() - Number(s.lastSeen || 0) < 86400000 * 7);
+    const updated = [me, ...existing];
+    saveSessions(updated);
+
+    if (typeof BroadcastChannel !== "undefined") {
+      try {
+        const ch = new BroadcastChannel(CHANNEL_NAME);
+        ch.postMessage({ type: "presence", peer: me });
+        ch.close();
+      } catch (_) {}
+    }
+  }
+
+  function startDirectChat(peer) {
+    if (typeof state !== "undefined" && Array.isArray(state.chats)) {
+      const already = state.chats.some(
+        (c) => String(c.handle || "").toLowerCase() === String(peer.handle || "").toLowerCase()
+      );
+      if (!already) {
+        state.chats.unshift({
+          id: `dm-${peer.handle}-${Date.now()}`,
+          title: peer.name,
+          name: peer.name,
+          handle: peer.handle,
+          subtitle: peer.online ? "Online · Grid" : "Offline · Grid",
+          lastMessage: `Started chat with ${peer.name} (${peer.handle})`,
+          unread: 0,
+          messages: []
+        });
+        if (typeof saveJson === "function" && typeof STORAGE_KEYS !== "undefined" && STORAGE_KEYS.chats) {
+          saveJson(STORAGE_KEYS.chats, state.chats);
+        }
+      }
+    }
+
+    if (typeof switchTab === "function") {
+      switchTab("chats");
+    } else {
+      const btn = document.querySelector('[data-tab="chats"], #nav-chats');
+      if (btn) btn.click();
+    }
+  }
+
+  function renderGlobalRoster() {
+    const nearbyTab = document.getElementById("tab-nearby");
+    if (!nearbyTab) return;
+
+    const me = getSelfProfile();
+    const stored = loadSessions().filter((s) => s.id !== me.id);
+    const mergedMap = new Map();
+
+    [...stored, ...remotePeers].forEach((p) => {
+      if (!p || !p.handle) return;
+      const key = String(p.handle).toLowerCase();
+      if (key === String(me.handle).toLowerCase() && p.id !== me.id) return;
+      mergedMap.set(key, {
+        id: p.id || key,
+        name: p.name || p.handle,
+        handle: p.handle,
+        online: Boolean(p.online),
+        lastSeen: Number(p.lastSeen || Date.now())
+      });
+    });
+
+    const peersList = Array.from(mergedMap.values());
+    const allUsers = [me, ...peersList];
+    const onlineTotal = allUsers.filter((u) => u.online).length;
+
+    const countPill = document.getElementById("nearby-count-pill");
+    if (countPill) {
+      const nextText = `${onlineTotal} Online · ${allUsers.length} On Grid`;
+      if (countPill.textContent !== nextText) countPill.textContent = nextText;
+    }
+
+    const footerEl = document.getElementById("radar-footer");
+    if (footerEl) {
+      const nextFooter =
+        peersList.length > 0
+          ? "Showing real app users across any distance."
+          : "No other active app sessions detected yet — open another tab or invite friends to join ScottGrid.";
+      if (footerEl.textContent !== nextFooter) footerEl.textContent = nextFooter;
+    }
+
+    let roster = document.getElementById("sg-grid-roster");
+    if (!roster) {
+      roster = document.createElement("div");
+      roster.id = "sg-grid-roster";
+      roster.className = "sg-grid-roster";
+      nearbyTab.appendChild(roster);
+    }
+
+    const cardsHtml = allUsers
+      .map((u, idx) => {
+        const isMe = idx === 0;
+        const dotClass = u.online ? "is-online" : "is-offline";
+        const statusText = u.online ? "Online" : "Offline";
+        const chatBtn = isMe
+          ? ""
+          : `<button type="button" class="sg-grid-chat-btn" data-dm-handle="${encodeURIComponent(u.handle)}">Chat</button>`;
+        return `
+          <div class="sg-grid-peer-card">
+            <div>
+              <div class="sg-grid-peer-title">
+                <span class="sg-grid-dot ${dotClass}"></span>
+                <span>${u.name}${isMe ? " (You)" : ""}</span>
+              </div>
+              <div class="sg-grid-peer-sub">${u.handle} · Any distance</div>
+            </div>
+            <div class="sg-grid-peer-actions">
+              <span class="sg-grid-presence-tag ${dotClass}">${statusText}</span>
+              ${chatBtn}
+            </div>
+          </div>
+        `;
+      })
+      .join("");
+
+    const nextHtml = `
+      <div class="sg-grid-roster-head">
+        <span>App Users (Global · No Proximity Limit)</span>
+        <button type="button" class="sg-grid-status-toggle" id="sg-self-online-btn">
+          Your Status: ${selfOnline ? "Online" : "Offline"}
+        </button>
+      </div>
+      ${cardsHtml}
+    `;
+
+    if (roster.innerHTML !== nextHtml) {
+      roster.innerHTML = nextHtml;
+
+      const toggleBtn = document.getElementById("sg-self-online-btn");
+      if (toggleBtn) {
+        toggleBtn.addEventListener("click", () => {
+          selfOnline = !selfOnline;
+          localStorage.setItem(SELF_ONLINE_KEY, String(selfOnline));
+          publishSelfPresence();
+          scheduleRender();
+        });
+      }
+
+      roster.querySelectorAll("[data-dm-handle]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const decoded = decodeURIComponent(btn.dataset.dmHandle || "");
+          const target = allUsers.find((item) => item.handle === decoded);
+          if (target) startDirectChat(target);
+        });
+      });
+    }
+  }
+
+  function scheduleRender() {
+    if (timerId) clearTimeout(timerId);
+    timerId = setTimeout(renderGlobalRoster, 90);
+  }
+
+  window.ScottGridPresence = {
+    upsertPeers(peers) {
+      if (!Array.isArray(peers)) return;
+      remotePeers = peers.filter((p) => p && p.handle);
+      scheduleRender();
+    }
+  };
+
+  if (typeof BroadcastChannel !== "undefined") {
+    try {
+      const bc = new BroadcastChannel(CHANNEL_NAME);
+      bc.onmessage = (ev) => {
+        if (ev && ev.data && ev.data.type === "presence" && ev.data.peer) {
+          const incoming = ev.data.peer;
+          remotePeers = [
+            incoming,
+            ...remotePeers.filter((p) => p.id !== incoming.id && p.handle !== incoming.handle)
+          ];
+          scheduleRender();
+        }
+      };
+    } catch (_) {}
+  }
+
+  publishSelfPresence();
+  setInterval(publishSelfPresence, 15000);
+
+  document.addEventListener("click", (e) => {
+    if (e.target.closest('[data-tab="nearby"], #nav-nearby')) {
+      scheduleRender();
+    }
+  });
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", scheduleRender);
+  } else {
+    scheduleRender();
+  }
+})();
