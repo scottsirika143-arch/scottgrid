@@ -969,3 +969,26 @@ function bindStatusUpload() {
 }
 
 bindStatusUpload();
+
+function bindStoryModalClose() {
+  const modal = document.getElementById("story-modal");
+  if (!modal || modal.dataset.sgCloseBound) return;
+  modal.dataset.sgCloseBound = "1";
+
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) {
+      closeStoryModal();
+      return;
+    }
+    const closeEl = e.target.closest("#close-story-modal, [data-close-story], button");
+    if (closeEl && closeEl.textContent.trim().toLowerCase() === "close") {
+      closeStoryModal();
+      return;
+    }
+    if (closeEl && (closeEl.id === "close-story-modal" || closeEl.hasAttribute("data-close-story"))) {
+      closeStoryModal();
+    }
+  });
+}
+
+bindStoryModalClose();
