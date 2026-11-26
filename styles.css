@@ -1279,3 +1279,110 @@ filter: brightness(1.05) contrast(1.07) saturate(1.14);
   background: #0ea5e9;
   color: #04101f;
 }
+
+.sg-currency-picker {
+  margin-top: 10px;
+  background: rgba(11, 19, 38, 0.85);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 14px;
+  padding: 12px;
+  color: #f8fafc;
+}
+
+.sg-currency-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #94a3b8;
+  margin-bottom: 8px;
+}
+
+.sg-currency-featured-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.sg-currency-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(15, 23, 42, 0.9);
+  color: #e2e8f0;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.sg-currency-chip:hover {
+  border-color: rgba(96, 165, 250, 0.65);
+  background: rgba(30, 41, 59, 0.95);
+}
+
+.sg-currency-chip.is-selected,
+.sg-currency-row.is-selected {
+  border-color: #38bdf8;
+  background: rgba(14, 165, 233, 0.18);
+  color: #ffffff;
+}
+
+.sg-currency-flag {
+  font-size: 17px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.sg-currency-code {
+  font-weight: 700;
+}
+
+.sg-currency-scroll-list {
+  max-height: 176px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-right: 4px;
+}
+
+.sg-currency-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(15, 23, 42, 0.65);
+  color: #cbd5e1;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.sg-currency-row:hover {
+  border-color: rgba(148, 163, 184, 0.4);
+  background: rgba(30, 41, 59, 0.8);
+}
+
+.sg-currency-row-left {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.sg-currency-name {
+  color: #94a3b8;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

@@ -1973,3 +1973,159 @@ syncVideoCallModal();
     true
   );
 })();
+
+(() => {
+  const MAIN_CURRENCIES = [
+    { code: "USD", flag: "🇺🇸", name: "US Dollar" },
+    { code: "UGX", flag: "🇺🇬", name: "Ugandan Shilling" },
+    { code: "EUR", flag: "🇪🇺", name: "Euro" },
+    { code: "GBP", flag: "🇬🇧", name: "British Pound" },
+    { code: "KES", flag: "🇰🇪", name: "Kenyan Shilling" },
+    { code: "NGN", flag: "🇳🇬", name: "Nigerian Naira" }
+  ];
+
+  const OTHER_CURRENCIES = [
+    { code: "TZS", flag: "🇹🇿", name: "Tanzanian Shilling" },
+    { code: "RWF", flag: "🇷🇼", name: "Rwandan Franc" },
+    { code: "ZAR", flag: "🇿🇦", name: "South African Rand" },
+    { code: "GHS", flag: "🇬🇭", name: "Ghanaian Cedi" },
+    { code: "ETB", flag: "🇪🇹", name: "Ethiopian Birr" },
+    { code: "CAD", flag: "🇨🇦", name: "Canadian Dollar" },
+    { code: "AUD", flag: "🇦🇺", name: "Australian Dollar" },
+    { code: "JPY", flag: "🇯🇵", name: "Japanese Yen" },
+    { code: "CNY", flag: "🇨🇳", name: "Chinese Yuan" },
+    { code: "INR", flag: "🇮🇳", name: "Indian Rupee" },
+    { code: "AED", flag: "🇦🇪", name: "UAE Dirham" },
+    { code: "CHF", flag: "🇨🇭", name: "Swiss Franc" }
+  ];
+
+  const ALL_CURRENCIES = [...MAIN_CURRENCIES, ...OTHER_CURRENCIES];
+
+  function syncSelectOption(selectEl, code) {
+    if (!selectEl) return;
+    const hasOption = Array.from(selectEl.options || []).some((opt) => opt.value === code);
+    if (!hasOption) {
+      const opt = document.createElement("option");
+      opt.value = code;
+      opt.textContent = code;
+      selectEl.appendChild(opt);
+    }
+    if (selectEl.value !== code) {
+      selectEl.value = code;
+      selectEl.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  }
+
+  function refreshSelectionState(pickerEl, activeCode) {
+    if (!pickerEl) return;
+    pickerEl.querySelectorAll("[data-currency-code]").forEach((el) => {
+      el.classList.toggle("is-selected", el.dataset.currencyCode === activeCode);
+    });
+  }
+
+  function mountCurrencyPicker() {
+    const selectEl = document.getElementById("display-currency");
+    if (!selectEl) return;
+
+    const currentCode =
+      (typeof state !== "undefined" && state.profile && state.profile.displayCurrency) ||
+      selectEl.value ||
+      "USD";
+
+    let pickerEl = document.getElementById("sg-currency-picker");
+    if (!pickerEl) {
+      pickerEl = document.createElement("div");
+      pickerEl.id = "sg-currency-picker";
+      pickerEl.className = "sg-currency-picker";
+
+      const featuredLabel = document.createElement("div");
+      featuredLabel.className = "sg-currency-section-label";
+      featuredLabel.textContent = "Main Currencies (Top 6)";
+
+      const featuredGrid = document.createElement("div");
+      featuredGrid.className = "sg-currency-featured-grid";
+
+      MAIN_CURRENCIES.forEach((item) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "sg-currency-chip";
+        btn.dataset.currencyCode = item.code;
+        btn.innerHTML = `<span class="sg-currency-flag">${item.flag}</span><span class="sg-currency-code">${item.code}</span>`;
+        featuredGrid.appendChild(btn);
+      });
+
+      const scrollLabel = document.createElement("div");
+      scrollLabel.className = "sg-currency-section-label";
+      scrollLabel.textContent = "More Countries (Scroll to Browse)";
+
+      const scrollList = document.createElement("div");
+      scrollList.className = "sg-currency-scroll-list";
+
+      OTHER_CURRENCIES.forEach((item) => {
+        const row = document.createElement("button");
+        row.type = "button";
+        row.className = "sg-currency-row";
+        row.dataset.currencyCode = item.code;
+        row.innerHTML = `
+          <span class="sg-currency-row-left">
+            <span class="sg-currency-flag">${item.flag}</span>
+            <span class="sg-currency-code">${item.code}</span>
+            <span class="sg-currency-name">${item.name}</span>
+          </span>
+        `;
+        scrollList.appendChild(row);
+      });
+
+      pickerEl.appendChild(featuredLabel);
+      pickerEl.appendChild(featuredGrid);
+      pickerEl.appendChild(scrollLabel);
+      pickerEl.appendChild(scrollList);
+
+      pickerEl.addEventListener("click", (e) => {
+        const target = e.target.closest("[data-currency-code]");
+        if (!target) return;
+        const chosen = target.dataset.currencyCode;
+        if (!chosen) return;
+
+        if (typeof state !== "undefined" && state.profile) {
+          state.profile.displayCurrency = chosen;
+        }
+        if (typeof state !== "undefined" && state.wallet) {
+          state.wallet.currency = chosen;
+        }
+
+        syncSelectOption(selectEl, chosen);
+        refreshSelectionState(pickerEl, chosen);
+        if (typeof render === "function") {
+          render();
+        }
+      });
+
+      selectEl.addEventListener("change", () => {
+        refreshSelectionState(pickerEl, selectEl.value);
+      });
+
+      selectEl.insertAdjacentElement("afterend", pickerEl);
+    }
+
+    const matched = ALL_CURRENCIES.find((c) => c.code === currentCode) ? currentCode : "USD";
+    syncSelectOption(selectEl, matched);
+    refreshSelectionState(pickerEl, matched);
+  }
+
+  const observer = new MutationObserver(() => {
+    if (document.getElementById("display-currency")) {
+      mountCurrencyPicker();
+    }
+  });
+
+  if (document.body) {
+    observer.observe(document.body, { childList: true, subtree: true });
+    mountCurrencyPicker();
+  } else {
+    document.addEventListener("DOMContentLoaded", () => {
+      observer.observe(document.body, { childList: true, subtree: true });
+      mountCurrencyPicker();
+    });
+  }
+})();
