@@ -775,8 +775,10 @@ async function submitWithdrawalToApi(payload) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
     const data = await res.json().catch(() => ({}));
+    if (!res.ok || data?.ok === false) {
+      return { ok: false, error: data?.error || `HTTP ${res.status}` };
+    }
     return { ok: true, data };
   } catch {
     return { ok: false, error: "Network/API route unavailable" };
@@ -1317,7 +1319,8 @@ function bindEvents() {
     renderWalletTab();
   });
 
-  document.getElementById("confirm-withdraw-btn")?.addEventListener("click", async () => {
+  document.getElementById("confirm-withdraw-btn")?.addEventListener("click", async (event) => {
+    const confirmBtn = event.currentTarget;
     const method = document.getElementById("withdraw-method")?.value || "mobile";
     const destination = (document.getElementById("withdraw-destination")?.value || "").trim();
     const amountUsd = Number(document.getElementById("withdraw-amount-usd")?.value || 0);
@@ -1331,28 +1334,51 @@ function bindEvents() {
       return;
     }
 
+    if (confirmBtn) {
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = "Processing...";
+    }
+
     state.wallet.usdBalance = Number((Number(state.wallet.usdBalance) - amountUsd).toFixed(4));
-    state.wallet.transactions.unshift({
-      id: `tx-${Date.now()}`,
+    const txEntry = {
+      id: `tx-${Date.now()}` ,
       label: `Withdraw $${amountUsd.toFixed(2)}`,
       detail: `${method.toUpperCase()} · ${destination}`,
       timeLabel: "Just now",
-    });
+    };
+    state.wallet.transactions.unshift(txEntry);
 
     saveJson(STORAGE_KEYS.wallet, state.wallet);
     if (withdrawPanel) withdrawPanel.style.display = "none";
     renderWalletTab();
 
-    const apiResult = await submitWithdrawalToApi({
-      method,
-      destination,
-      amountUsd,
-      handle: state.profile.handle,
-    });
-    if (walletNote) {
-      walletNote.textContent = apiResult.ok
-        ? `Withdrawal of $${amountUsd.toFixed(2)} submitted.`
-        : `Recorded $${amountUsd.toFixed(2)} withdrawal locally (connect /api/payouts/withdraw for live settlement).`;
+    try {
+      const apiResult = await submitWithdrawalToApi({
+        method,
+        destination,
+        amountUsd,
+        handle: state.profile.handle,
+      });
+
+      const refCode = apiResult.ok ? apiResult.data?.reference : "";
+      const statusLabel = apiResult.ok ? apiResult.data?.status || "queued" : "";
+      if (refCode) {
+        txEntry.detail = `${method.toUpperCase()} · ${destination} · ${refCode}`;
+        saveJson(STORAGE_KEYS.wallet, state.wallet);
+        renderWalletTab();
+      }
+
+      if (walletNote) {
+        walletNote.textContent = apiResult.ok
+          ? `Withdrawal of $${amountUsd.toFixed(2)} ${statusLabel}${refCode ? ` (Ref: ${refCode})` : ""}.`
+          : `Recorded $${amountUsd.toFixed(2)} withdrawal locally (${apiResult.error}).`;
+      }
+    } finally {
+      const activeBtn = document.getElementById("confirm-withdraw-btn");
+      if (activeBtn) {
+        activeBtn.disabled = false;
+        activeBtn.textContent = "Cash Out Now";
+      }
     }
   });
 
