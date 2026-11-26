@@ -1,0 +1,25 @@
+﻿{
+    "name":  "ScottGrid",
+    "short_name":  "ScottGrid",
+    "description":  "ScottGrid mesh signal, status, and SGT token wallet app.",
+    "start_url":  "/",
+    "scope":  "/",
+    "display":  "standalone",
+    "orientation":  "portrait",
+    "background_color":  "#060b19",
+    "theme_color":  "#060b19",
+    "icons":  [
+                  {
+                      "src":  "/spider-icon.png",
+                      "sizes":  "192x192",
+                      "type":  "image/png",
+                      "purpose":  "any"
+                  },
+                  {
+                      "src":  "/spider-icon.png",
+                      "sizes":  "512x512",
+                      "type":  "image/png",
+                      "purpose":  "any maskable"
+                  }
+              ]
+}
