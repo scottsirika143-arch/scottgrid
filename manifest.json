@@ -10,13 +10,13 @@
     "theme_color":  "#060b19",
     "icons":  [
                   {
-                      "src":  "/public/spider-icon.png",
+                      "src":  "/spider-icon.png",
                       "sizes":  "192x192",
                       "type":  "image/png",
                       "purpose":  "any"
                   },
                   {
-                      "src":  "/public/spider-icon.png",
+                      "src":  "/spider-icon.png",
                       "sizes":  "512x512",
                       "type":  "image/png",
                       "purpose":  "any maskable"
