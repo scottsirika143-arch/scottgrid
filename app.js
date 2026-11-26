@@ -1751,3 +1751,114 @@ syncVideoCallModal();
   syncCallModalFullscreen();
   bindWalletControls();
 })();
+
+(() => {
+  function openWithdrawModal() {
+    if (document.getElementById("sg-withdraw-modal")) return;
+
+    const currentSgt =
+      typeof state !== "undefined" && state.wallet
+        ? Number(state.wallet.sgtTokens || 0)
+        : 0;
+
+    let selectedMethod = "Mobile Money";
+
+    const backdrop = document.createElement("div");
+    backdrop.id = "sg-withdraw-modal";
+    backdrop.className = "sg-withdraw-backdrop";
+
+    const card = document.createElement("div");
+    card.className = "sg-withdraw-card";
+
+    card.innerHTML = `
+      <h3 class="sg-withdraw-title">Withdraw SGT</h3>
+      <p class="sg-withdraw-sub">Available balance: ${currentSgt.toFixed(2)} SGT</p>
+      <div class="sg-withdraw-methods">
+        <button type="button" class="sg-withdraw-method-btn is-active" data-method="Mobile Money">Mobile Money</button>
+        <button type="button" class="sg-withdraw-method-btn" data-method="Bank Transfer">Bank Transfer</button>
+        <button type="button" class="sg-withdraw-method-btn" data-method="Wallet Address">Wallet Address</button>
+      </div>
+      <div class="sg-withdraw-field">
+        <label id="sg-withdraw-dest-label" for="sg-withdraw-dest">Mobile Money Number</label>
+        <input id="sg-withdraw-dest" type="text" placeholder="e.g. +256 7XX XXX XXX" />
+      </div>
+      <div class="sg-withdraw-field">
+        <label for="sg-withdraw-amt">Amount (SGT)</label>
+        <input id="sg-withdraw-amt" type="number" step="0.01" min="0.01" value="5.00" />
+      </div>
+      <div class="sg-withdraw-actions">
+        <button type="button" id="sg-withdraw-cancel" class="sg-withdraw-btn sg-withdraw-cancel">Cancel</button>
+        <button type="button" id="sg-withdraw-confirm" class="sg-withdraw-btn sg-withdraw-confirm">Withdraw</button>
+      </div>
+    `;
+
+    backdrop.appendChild(card);
+    document.body.appendChild(backdrop);
+
+    const destLabel = card.querySelector("#sg-withdraw-dest-label");
+    const destInput = card.querySelector("#sg-withdraw-dest");
+    const amtInput = card.querySelector("#sg-withdraw-amt");
+
+    card.querySelectorAll(".sg-withdraw-method-btn").forEach((mBtn) => {
+      mBtn.addEventListener("click", () => {
+        card.querySelectorAll(".sg-withdraw-method-btn").forEach((b) => b.classList.remove("is-active"));
+        mBtn.classList.add("is-active");
+        selectedMethod = mBtn.dataset.method || "Mobile Money";
+        if (selectedMethod === "Mobile Money") {
+          destLabel.textContent = "Mobile Money Number";
+          destInput.placeholder = "e.g. +256 7XX XXX XXX";
+        } else if (selectedMethod === "Bank Transfer") {
+          destLabel.textContent = "Bank Name & Account Number";
+          destInput.placeholder = "e.g. Stanbic - 90300XXXXXXX";
+        } else {
+          destLabel.textContent = "Destination Wallet Address";
+          destInput.placeholder = "e.g. 0x... or SGT wallet ID";
+        }
+      });
+    });
+
+    const closeModal = () => backdrop.remove();
+    card.querySelector("#sg-withdraw-cancel").addEventListener("click", closeModal);
+    backdrop.addEventListener("click", (e) => {
+      if (e.target === backdrop) closeModal();
+    });
+
+    card.querySelector("#sg-withdraw-confirm").addEventListener("click", () => {
+      const dest = (destInput.value || "").trim();
+      const amt = parseFloat(amtInput.value || "");
+      if (!dest) {
+        window.alert(`Please enter your ${selectedMethod} details.`);
+        destInput.focus();
+        return;
+      }
+      if (!Number.isFinite(amt) || amt <= 0) {
+        window.alert("Enter a valid SGT amount greater than 0.");
+        amtInput.focus();
+        return;
+      }
+      if (typeof recordWalletTx === "function") {
+        const ok = recordWalletTx("withdraw", amt, `${selectedMethod} (${dest})`);
+        if (ok) {
+          closeModal();
+          window.alert(`Withdrew ${amt.toFixed(2)} SGT via ${selectedMethod}.`);
+        }
+      }
+    });
+  }
+
+  document.addEventListener(
+    "click",
+    (e) => {
+      const btn = e.target.closest("button");
+      if (!btn) return;
+      const label = (btn.textContent || "").trim().toLowerCase();
+      if (label === "withdraw" && !btn.closest("#sg-withdraw-modal")) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        openWithdrawModal();
+      }
+    },
+    true
+  );
+})();

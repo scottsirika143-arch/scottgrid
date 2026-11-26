@@ -1185,3 +1185,97 @@ filter: brightness(1.05) contrast(1.07) saturate(1.14);
   font-size: 0.9rem;
   font-weight: 600;
 }
+
+.sg-withdraw-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.78);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 1000;
+}
+.sg-withdraw-card {
+  width: 100%;
+  max-width: 420px;
+  background: #0b1326;
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  border-radius: 18px;
+  padding: 20px;
+  color: #f8fafc;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
+}
+.sg-withdraw-title {
+  margin: 0 0 4px;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+.sg-withdraw-sub {
+  margin: 0 0 14px;
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+.sg-withdraw-methods {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.sg-withdraw-method-btn {
+  padding: 10px 8px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: #0f1c36;
+  color: #cbd5e1;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.sg-withdraw-method-btn.is-active {
+  border-color: #38bdf8;
+  background: rgba(56, 189, 248, 0.16);
+  color: #ffffff;
+}
+.sg-withdraw-field {
+  margin-bottom: 12px;
+}
+.sg-withdraw-field label {
+  display: block;
+  font-size: 0.78rem;
+  color: #94a3b8;
+  margin-bottom: 5px;
+}
+.sg-withdraw-field input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: #060c1a;
+  color: #f8fafc;
+  font-size: 0.92rem;
+}
+.sg-withdraw-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+.sg-withdraw-btn {
+  flex: 1;
+  padding: 11px 14px;
+  border-radius: 12px;
+  border: none;
+  font-weight: 700;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+.sg-withdraw-cancel {
+  background: #1e293b;
+  color: #e2e8f0;
+}
+.sg-withdraw-confirm {
+  background: #0ea5e9;
+  color: #04101f;
+}
