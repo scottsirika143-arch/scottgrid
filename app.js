@@ -1459,3 +1459,295 @@ syncVideoCallModal();
   walletObserver.observe(document.body, { childList: true, subtree: true });
   wireWalletButtons();
 })();
+
+(() => {
+  function showMissedCallBanner(callerName = "Grid Mesh") {
+    const target =
+      document.querySelector("#tab-chats") ||
+      document.querySelector("#chat-thread") ||
+      document.querySelector(".sg-shell-inner") ||
+      document.body;
+    if (!target) return;
+
+    let banner = document.getElementById("sg-missed-call-banner");
+    if (!banner) {
+      banner = document.createElement("div");
+      banner.id = "sg-missed-call-banner";
+      banner.className = "sg-missed-call-banner";
+      target.prepend(banner);
+    }
+    const timeStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    banner.textContent = `Missed call from ${callerName} • ${timeStr}`;
+  }
+
+  window.triggerMissedCall = showMissedCallBanner;
+
+  function syncCallModalFullscreen() {
+    const modal = document.getElementById("call-modal");
+    if (!modal) return;
+    const styleDisplay = window.getComputedStyle(modal).display;
+    const isVisible = styleDisplay !== "none" && modal.style.display !== "none";
+    const isVideo = /video/i.test(
+      (document.getElementById("call-modal-title")?.textContent || "") + " " + (modal.textContent || "")
+    );
+    modal.classList.toggle("is-fullscreen-call", isVisible && isVideo);
+  }
+
+  const origOpenCallModal = typeof openCallModal === "function" ? openCallModal : null;
+  if (origOpenCallModal) {
+    window.openCallModal = async function (mode, ...rest) {
+      const res = await origOpenCallModal.apply(this, [mode, ...rest]);
+      syncCallModalFullscreen();
+      return res;
+    };
+  }
+
+  const origCloseCallModal = typeof closeCallModal === "function" ? closeCallModal : null;
+  if (origCloseCallModal) {
+    window.closeCallModal = function (...rest) {
+      const modal = document.getElementById("call-modal");
+      const title = document.getElementById("call-modal-title")?.textContent || "Grid Mesh";
+      const wasOpen = modal && modal.style.display !== "none";
+      const res = origCloseCallModal.apply(this, rest);
+      if (modal) modal.classList.remove("is-fullscreen-call");
+      if (wasOpen && modal?.dataset.sgCallAnswered !== "1") {
+        showMissedCallBanner(title.replace(/^Grid\s+(Video|Voice)\s+Call\s*[-–•]?\s*/i, "") || "Grid Mesh");
+      }
+      if (modal) delete modal.dataset.sgCallAnswered;
+      return res;
+    };
+  }
+
+  function recordWalletTx(type, amountSgt, note) {
+    if (typeof state === "undefined" || !state.wallet) return false;
+    const amt = Number(amountSgt);
+    if (!Number.isFinite(amt) || amt <= 0) return false;
+
+    const currentSgt = Number(state.wallet.sgtTokens || 0);
+    if (amt > currentSgt) {
+      window.alert(`Insufficient SGT balance. You currently have ${currentSgt.toFixed(2)} SGT.`);
+      return false;
+    }
+
+    const rate =
+      typeof CURRENCY_RATES !== "undefined" &&
+      state.wallet.currency &&
+      CURRENCY_RATES[state.wallet.currency]?.rate
+        ? CURRENCY_RATES[state.wallet.currency].rate
+        : 0.5234;
+
+    const nextSgt = Number((currentSgt - amt).toFixed(4));
+    const nextUsd = Math.max(0, Number((nextSgt * rate).toFixed(4)));
+
+    state.wallet.sgtTokens = nextSgt;
+    state.wallet.usdBalance = nextUsd;
+    state.wallet.lastEarnedAt = Date.now();
+    state.wallet.transactions = Array.isArray(state.wallet.transactions) ? state.wallet.transactions : [];
+    state.wallet.transactions.unshift({
+      id: `tx_${Date.now()}`,
+      type,
+      amountSgt: amt,
+      note,
+      timestamp: Date.now(),
+      status: "Completed",
+    });
+
+    if (typeof STORAGE_KEYS !== "undefined" && typeof saveJson === "function") {
+      saveJson(STORAGE_KEYS.wallet, state.wallet);
+    }
+    if (typeof renderWalletTab === "function") {
+      renderWalletTab();
+    } else if (typeof renderAll === "function") {
+      renderAll();
+    }
+    return true;
+  }
+
+  function bindWalletControls() {
+    document.querySelectorAll("button").forEach((btn) => {
+      if (btn.dataset.sgWalletBound === "1") return;
+      const label = (btn.textContent || "").trim().toLowerCase();
+
+      if (label === "send tokens") {
+        btn.dataset.sgWalletBound = "1";
+        btn.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const recipient = window.prompt("Send SGT to (username or wallet ID):", "@scottgrid_peer");
+          if (!recipient || !recipient.trim()) return;
+          const rawAmt = window.prompt("Amount of SGT to send:", "2.50");
+          const amt = parseFloat(rawAmt || "");
+          if (recordWalletTx("send", amt, `Sent to ${recipient.trim()}`)) {
+            window.alert(`Sent ${amt.toFixed(2)} SGT to ${recipient.trim()}.`);
+          }
+        });
+      } else if (label === "withdraw") {
+        btn.dataset.sgWalletBound = "1";
+        btn.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const rawAmt = window.prompt("Amount of SGT to withdraw:", "5.00");
+          const amt = parseFloat(rawAmt || "");
+          if (recordWalletTx("withdraw", amt, "Wallet withdrawal")) {
+            window.alert(`Withdrew ${amt.toFixed(2)} SGT.`);
+          }
+        });
+      }
+    });
+  }
+
+  const domObserver = new MutationObserver(() => {
+    syncCallModalFullscreen();
+    bindWalletControls();
+  });
+  domObserver.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["style", "class"] });
+
+  syncCallModalFullscreen();
+  bindWalletControls();
+})();
+
+(() => {
+  function showMissedCallBanner(callerName = "Grid Mesh") {
+    const target =
+      document.querySelector("#tab-chats") ||
+      document.querySelector("#chat-thread") ||
+      document.querySelector(".sg-shell-inner") ||
+      document.body;
+    if (!target) return;
+
+    let banner = document.getElementById("sg-missed-call-banner");
+    if (!banner) {
+      banner = document.createElement("div");
+      banner.id = "sg-missed-call-banner";
+      banner.className = "sg-missed-call-banner";
+      target.prepend(banner);
+    }
+    const timeStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    banner.textContent = `Missed call from ${callerName} • ${timeStr}`;
+  }
+
+  window.triggerMissedCall = showMissedCallBanner;
+
+  function syncCallModalFullscreen() {
+    const modal = document.getElementById("call-modal");
+    if (!modal) return;
+    const styleDisplay = window.getComputedStyle(modal).display;
+    const isVisible = styleDisplay !== "none" && modal.style.display !== "none";
+    const isVideo = /video/i.test(
+      (document.getElementById("call-modal-title")?.textContent || "") + " " + (modal.textContent || "")
+    );
+    modal.classList.toggle("is-fullscreen-call", isVisible && isVideo);
+  }
+
+  const origOpenCallModal = typeof openCallModal === "function" ? openCallModal : null;
+  if (origOpenCallModal) {
+    window.openCallModal = async function (mode, ...rest) {
+      const res = await origOpenCallModal.apply(this, [mode, ...rest]);
+      syncCallModalFullscreen();
+      return res;
+    };
+  }
+
+  const origCloseCallModal = typeof closeCallModal === "function" ? closeCallModal : null;
+  if (origCloseCallModal) {
+    window.closeCallModal = function (...rest) {
+      const modal = document.getElementById("call-modal");
+      const title = document.getElementById("call-modal-title")?.textContent || "Grid Mesh";
+      const wasOpen = modal && modal.style.display !== "none";
+      const res = origCloseCallModal.apply(this, rest);
+      if (modal) modal.classList.remove("is-fullscreen-call");
+      if (wasOpen && modal?.dataset.sgCallAnswered !== "1") {
+        showMissedCallBanner(title.replace(/^Grid\s+(Video|Voice)\s+Call\s*[-–•]?\s*/i, "") || "Grid Mesh");
+      }
+      if (modal) delete modal.dataset.sgCallAnswered;
+      return res;
+    };
+  }
+
+  function recordWalletTx(type, amountSgt, note) {
+    if (typeof state === "undefined" || !state.wallet) return false;
+    const amt = Number(amountSgt);
+    if (!Number.isFinite(amt) || amt <= 0) return false;
+
+    const currentSgt = Number(state.wallet.sgtTokens || 0);
+    if (amt > currentSgt) {
+      window.alert(`Insufficient SGT balance. You currently have ${currentSgt.toFixed(2)} SGT.`);
+      return false;
+    }
+
+    const rate =
+      typeof CURRENCY_RATES !== "undefined" &&
+      state.wallet.currency &&
+      CURRENCY_RATES[state.wallet.currency]?.rate
+        ? CURRENCY_RATES[state.wallet.currency].rate
+        : 0.5234;
+
+    const nextSgt = Number((currentSgt - amt).toFixed(4));
+    const nextUsd = Math.max(0, Number((nextSgt * rate).toFixed(4)));
+
+    state.wallet.sgtTokens = nextSgt;
+    state.wallet.usdBalance = nextUsd;
+    state.wallet.lastEarnedAt = Date.now();
+    state.wallet.transactions = Array.isArray(state.wallet.transactions) ? state.wallet.transactions : [];
+    state.wallet.transactions.unshift({
+      id: `tx_${Date.now()}`,
+      type,
+      amountSgt: amt,
+      note,
+      timestamp: Date.now(),
+      status: "Completed",
+    });
+
+    if (typeof STORAGE_KEYS !== "undefined" && typeof saveJson === "function") {
+      saveJson(STORAGE_KEYS.wallet, state.wallet);
+    }
+    if (typeof renderWalletTab === "function") {
+      renderWalletTab();
+    } else if (typeof renderAll === "function") {
+      renderAll();
+    }
+    return true;
+  }
+
+  function bindWalletControls() {
+    document.querySelectorAll("button").forEach((btn) => {
+      if (btn.dataset.sgWalletBound === "1") return;
+      const label = (btn.textContent || "").trim().toLowerCase();
+
+      if (label === "send tokens") {
+        btn.dataset.sgWalletBound = "1";
+        btn.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const recipient = window.prompt("Send SGT to (username or wallet ID):", "@scottgrid_peer");
+          if (!recipient || !recipient.trim()) return;
+          const rawAmt = window.prompt("Amount of SGT to send:", "2.50");
+          const amt = parseFloat(rawAmt || "");
+          if (recordWalletTx("send", amt, `Sent to ${recipient.trim()}`)) {
+            window.alert(`Sent ${amt.toFixed(2)} SGT to ${recipient.trim()}.`);
+          }
+        });
+      } else if (label === "withdraw") {
+        btn.dataset.sgWalletBound = "1";
+        btn.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const rawAmt = window.prompt("Amount of SGT to withdraw:", "5.00");
+          const amt = parseFloat(rawAmt || "");
+          if (recordWalletTx("withdraw", amt, "Wallet withdrawal")) {
+            window.alert(`Withdrew ${amt.toFixed(2)} SGT.`);
+          }
+        });
+      }
+    });
+  }
+
+  const domObserver = new MutationObserver(() => {
+    syncCallModalFullscreen();
+    bindWalletControls();
+  });
+  domObserver.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["style", "class"] });
+
+  syncCallModalFullscreen();
+  bindWalletControls();
+})();
