@@ -911,3 +911,14 @@ function bindAuthEvents() {
 hydrateState();
 bindAuthEvents();
 renderAll();
+
+function bindNavEvents() {
+  document.querySelectorAll(".sg-nav-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const tabName = btn.getAttribute("data-tab");
+      if (tabName) switchTab(tabName);
+    });
+  });
+}
+
+bindNavEvents();
