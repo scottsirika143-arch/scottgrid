@@ -2354,3 +2354,161 @@ syncVideoCallModal();
     });
   }
 })();
+
+(() => {
+  const PRESENCE_STORAGE_KEY = "scottgrid.global_radar_presence.v1";
+  const GRID_PEERS = [
+    { id: "peer-1", name: "Nadia K.", handle: "@nadiak", region: "Nairobi, KE", distanceLabel: "518 km away", online: true },
+    { id: "peer-2", name: "Tariq M.", handle: "@tariqm", region: "Lagos, NG", distanceLabel: "3,210 km away", online: true },
+    { id: "peer-3", name: "Elena R.", handle: "@elenar", region: "London, UK", distanceLabel: "6,490 km away", online: false },
+    { id: "peer-4", name: "Devon P.", handle: "@devonp", region: "Toronto, CA", distanceLabel: "11,640 km away", online: true },
+    { id: "peer-5", name: "Zuri A.", handle: "@zuria", region: "Kigali, RW", distanceLabel: "380 km away", online: false },
+    { id: "peer-6", name: "Kenji T.", handle: "@kenjit", region: "Tokyo, JP", distanceLabel: "12,180 km away", online: true }
+  ];
+
+  let activeFilter = "All";
+
+  function loadPresenceState() {
+    try {
+      const raw = localStorage.getItem(PRESENCE_STORAGE_KEY);
+      if (!raw) return { myOnline: true };
+      const parsed = JSON.parse(raw);
+      return { myOnline: parsed.myOnline !== false };
+    } catch (_) {
+      return { myOnline: true };
+    }
+  }
+
+  function savePresenceState(presence) {
+    try {
+      localStorage.setItem(PRESENCE_STORAGE_KEY, JSON.stringify(presence));
+    } catch (_) {}
+  }
+
+  let presenceState = loadPresenceState();
+
+  function getAnchorElement() {
+    return (
+      document.getElementById("nearby-count-pill") ||
+      document.getElementById("radar-you-label") ||
+      document.querySelector('[data-tab-panel="nearby"], #nearby-view, .sg-nearby-view')
+    );
+  }
+
+  function renderGlobalRadar() {
+    const anchor = getAnchorElement();
+    if (!anchor) return;
+
+    const nearbyCountPill = document.getElementById("nearby-count-pill");
+    const onlinePeersCount = GRID_PEERS.filter((p) => p.online).length + (presenceState.myOnline ? 1 : 0);
+    const totalPeersCount = GRID_PEERS.length + 1;
+
+    if (nearbyCountPill) {
+      nearbyCountPill.textContent = `${onlinePeersCount} Online · ${totalPeersCount} On Grid`;
+    }
+
+    let panel = document.getElementById("sg-global-radar-panel");
+    if (!panel) {
+      panel = document.createElement("div");
+      panel.id = "sg-global-radar-panel";
+      panel.className = "sg-radar-panel";
+      const parent = anchor.closest(".sg-card, .sg-panel, section, div") || anchor.parentElement;
+      if (parent) {
+        parent.insertAdjacentElement("afterend", panel);
+      } else {
+        anchor.insertAdjacentElement("afterend", panel);
+      }
+    }
+
+    const myName =
+      (typeof state !== "undefined" && state.profile && (state.profile.displayName || state.profile.handle)) ||
+      "You";
+    const myHandle =
+      (typeof state !== "undefined" && state.profile && state.profile.handle) || "@scott";
+
+    const entries = [
+      {
+        id: "me",
+        name: `${myName} (You)`,
+        handle: myHandle,
+        region: "Global Grid",
+        distanceLabel: "Any distance",
+        online: Boolean(presenceState.myOnline),
+        isSelf: true
+      },
+      ...GRID_PEERS
+    ].filter((item) => {
+      if (activeFilter === "Online") return item.online;
+      if (activeFilter === "Offline") return !item.online;
+      return true;
+    });
+
+    const filterButtonsHtml = ["All", "Online", "Offline"]
+      .map(
+        (f) =>
+          `<button type="button" class="sg-radar-pill ${activeFilter === f ? "is-active" : ""}" data-radar-filter="${f}">${f}</button>`
+      )
+      .join("");
+
+    const listHtml = entries
+      .map((person) => {
+        const statusClass = person.online ? "is-online" : "is-offline";
+        const statusText = person.online ? "Online" : "Offline";
+        return `
+          <div class="sg-radar-user">
+            <div class="sg-radar-user-info">
+              <div class="sg-radar-user-name">
+                <span class="sg-radar-status-dot ${statusClass}"></span>
+                <span>${person.name}</span>
+              </div>
+              <div class="sg-radar-user-meta">${person.handle} · ${person.region} · ${person.distanceLabel}</div>
+            </div>
+            <span class="sg-radar-badge ${statusClass}">${statusText}</span>
+          </div>
+        `;
+      })
+      .join("");
+
+    panel.innerHTML = `
+      <div class="sg-radar-top">
+        <div class="sg-radar-filters">${filterButtonsHtml}</div>
+        <button type="button" class="sg-radar-pill ${presenceState.myOnline ? "is-active" : ""}" id="sg-toggle-my-presence">
+          Status: ${presenceState.myOnline ? "Online" : "Offline"}
+        </button>
+      </div>
+      <div class="sg-radar-list">${listHtml || '<div class="sg-radar-user-meta">No users match this filter.</div>'}</div>
+    `;
+
+    panel.querySelectorAll("[data-radar-filter]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        activeFilter = btn.dataset.radarFilter || "All";
+        renderGlobalRadar();
+      });
+    });
+
+    const toggleBtn = document.getElementById("sg-toggle-my-presence");
+    if (toggleBtn) {
+      toggleBtn.addEventListener("click", () => {
+        presenceState.myOnline = !presenceState.myOnline;
+        savePresenceState(presenceState);
+        renderGlobalRadar();
+      });
+    }
+  }
+
+  const observer = new MutationObserver(() => {
+    if (getAnchorElement()) {
+      renderGlobalRadar();
+    }
+  });
+
+  if (document.body) {
+    observer.observe(document.body, { childList: true, subtree: true });
+    renderGlobalRadar();
+  } else {
+    document.addEventListener("DOMContentLoaded", () => {
+      observer.observe(document.body, { childList: true, subtree: true });
+      renderGlobalRadar();
+    });
+  }
+})();
