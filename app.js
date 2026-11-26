@@ -2963,11 +2963,10 @@ syncVideoCallModal();
   }
 })();
 
-// --- SCOTTGRID SUPABASE SYNC START ---
 import { createClient } from "@supabase/supabase-js";
 
 (() => {
-  const SUPABASE_URL = "https://yjcxhhzpfrezpxnxmvxf.supabase.co";
+  const SUPABASE_URL = "YOUR_SUPABASE_URL";
   const SUPABASE_KEY = "YOUR_SUPABASE_PUBLISHABLE_KEY";
   const PRESENCE_CHANNEL = "scottgrid:global-radar";
 
@@ -2977,158 +2976,48 @@ import { createClient } from "@supabase/supabase-js";
   const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
   const clientKey = `sg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-  let tableRows = [];
-  let liveHandles = new Set();
-
-  function getActiveUserInfo() {
-    const prof = typeof state !== "undefined" && state.profile ? state.profile : {};
-    const rawHandle = String(prof.handle || "@scottsirika143").trim();
-    const handle = rawHandle.startsWith("@") ? rawHandle : `@${rawHandle}`;
-    const name = String(prof.displayName || handle.replace(/^@/, "") || "Scott").trim();
-    const selfBtn = document.getElementById("sg-self-online-btn");
-    const online = selfBtn ? !/Offline$/i.test(selfBtn.textContent || "") : true;
-    return { id: clientKey, name, handle, online, lastSeen: Date.now() };
-  }
-
-  function recomputePeers() {
-    const me = getActiveUserInfo();
-    const byHandle = new Map();
-
-    for (const row of tableRows) {
-      if (!row || !row.handle) continue;
-      const h = String(row.handle).trim();
-      const key = h.toLowerCase();
-      if (key === me.handle.toLowerCase()) continue;
-      byHandle.set(key, {
-        id: row.handle,
-        name: row.display_name || h,
-        handle: h,
-        online: liveHandles.has(key),
-        lastSeen: row.last_seen ? Date.parse(row.last_seen) || Date.now() : Date.now()
-      });
-    }
-
-    window.ScottGridPresence.upsertPeers(Array.from(byHandle.values()));
-  }
-
-  async function upsertSelfToTable() {
-    const me = getActiveUserInfo();
-    if (!me.handle) return;
-    await supabase.from("grid_users").upsert(
-      {
-        handle: me.handle,
-        display_name: me.name,
-        last_seen: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      },
-      { onConflict: "handle" }
-    );
-  }
-
-  async function fetchTableUsers() {
-    const { data, error } = await supabase
-      .from("grid_users")
-      .select("handle, display_name, last_seen")
-      .order("last_seen", { ascending: false })
-      .limit(100);
-
-    if (!error && Array.isArray(data)) {
-      tableRows = data;
-      recomputePeers();
-    }
-  }
-
   const channel = supabase.channel(PRESENCE_CHANNEL, {
     config: { presence: { key: clientKey } }
   });
 
-  function syncPresenceHandles() {
+  function syncPresenceState() {
     const rawState = channel.presenceState();
-    const nextLive = new Set();
+    const peers = [];
 
     Object.entries(rawState || {}).forEach(([key, metas]) => {
       if (key === clientKey) return;
       const latest = Array.isArray(metas) && metas.length ? metas[metas.length - 1] : null;
       if (!latest || !latest.handle) return;
-      if (latest.online !== false) {
-        nextLive.add(String(latest.handle).trim().toLowerCase());
-      }
+
+      peers.push({
+        id: latest.id || key,
+        name: latest.name || latest.handle,
+        handle: latest.handle,
+        online: latest.online !== false,
+        lastSeen: latest.lastSeen ? Date.parse(latest.lastSeen) || Date.now() : Date.now()
+      });
     });
 
-    liveHandles = nextLive;
-    recomputePeers();
+    window.ScottGridPresence.upsertPeers(peers);
   }
 
   channel
-    .on("presence", { event: "sync" }, syncPresenceHandles)
-    .on("presence", { event: "join" }, syncPresenceHandles)
-    .on("presence", { event: "leave" }, syncPresenceHandles)
+    .on("presence", { event: "sync" }, syncPresenceState)
+    .on("presence", { event: "join" }, syncPresenceState)
+    .on("presence", { event: "leave" }, syncPresenceState)
     .subscribe(async (status) => {
       if (status !== "SUBSCRIBED") return;
-      const me = getActiveUserInfo();
+      const prof = typeof state !== "undefined" && state.profile ? state.profile : {};
+      const selfBtn = document.getElementById("sg-self-online-btn");
+      const isOnline = selfBtn ? !/Offline$/i.test(selfBtn.textContent || "") : true;
+
       await channel.track({
         id: clientKey,
-        name: me.name,
-        handle: me.handle,
-        online: me.online,
+        name: String(prof.displayName || prof.handle || "Scott").trim() || "Scott",
+        handle: String(prof.handle || "@scott").trim() || "@scott",
+        online: isOnline,
         lastSeen: new Date().toISOString()
       });
     });
-
-  supabase
-    .channel("scottgrid:grid-users-changes")
-    .on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "grid_users" },
-      () => {
-        fetchTableUsers();
-      }
-    )
-    .subscribe();
-
-  upsertSelfToTable().then(fetchTableUsers);
-  setInterval(() => {
-    upsertSelfToTable();
-    fetchTableUsers();
-  }, 30000);
 })();
-// --- SCOTTGRID SUPABASE SYNC END ---
 
-// --- SCOTTGRID MY STORY ONLY MODE START ---
-(() => {
-  const MY_STORY_ONLY = true;
-
-  function enforceMyStoryOnly() {
-    if (!MY_STORY_ONLY) return;
-
-    const candidates = Array.from(document.querySelectorAll("*")).filter((el) => {
-      if (el.children.length < 2 || el.children.length > 25) return false;
-      const text = (el.textContent || "").toLowerCase();
-      return text.includes("my story");
-    });
-
-    for (const container of candidates) {
-      const items = Array.from(container.children).filter((child) => {
-        const rect = child.getBoundingClientRect();
-        return rect.width > 20 && rect.height > 20;
-      });
-      if (items.length <= 1) continue;
-
-      items.forEach((item, idx) => {
-        const hasMyStory = /my story/i.test(item.textContent || "");
-        const keep = hasMyStory || idx === 0;
-        item.style.display = keep ? "" : "none";
-      });
-    }
-  }
-
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", enforceMyStoryOnly);
-  } else {
-    enforceMyStoryOnly();
-  }
-
-  const observer = new MutationObserver(() => enforceMyStoryOnly());
-  observer.observe(document.documentElement, { childList: true, subtree: true });
-})();
-// --- SCOTTGRID MY STORY ONLY MODE END ---
