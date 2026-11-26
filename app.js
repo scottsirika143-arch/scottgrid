@@ -3272,3 +3272,20 @@ import { createClient } from "@supabase/supabase-js";
   }, true);
 })();
 // --- SCOTTGRID STORY COMPOSER & COMMENTS END ---
+
+// --- SCOTTGRID LIVE WALLET TICK START ---
+(() => {
+  setInterval(() => {
+    if (typeof state === "undefined" || !state.wallet || typeof syncWalletTicks !== "function") return;
+    syncWalletTicks(Date.now());
+
+    const activeNav = document.querySelector(".sg-nav-btn.is-active, .sg-nav-btn.active");
+    const activeTab = activeNav ? activeNav.getAttribute("data-tab") : "";
+    const isWalletOpen = activeTab === "wallet" || document.getElementById("wallet-tab")?.offsetParent !== null;
+
+    if (isWalletOpen && typeof renderWalletTab === "function") {
+      renderWalletTab();
+    }
+  }, 1000);
+})();
+// --- SCOTTGRID LIVE WALLET TICK END ---
