@@ -1862,3 +1862,114 @@ syncVideoCallModal();
     true
   );
 })();
+
+(() => {
+  function openSendModal() {
+    if (document.getElementById("sg-send-modal")) return;
+
+    const currentSgt =
+      typeof state !== "undefined" && state.wallet
+        ? Number(state.wallet.sgtTokens || 0)
+        : 0;
+
+    let selectedTargetType = "Username / Handle";
+
+    const backdrop = document.createElement("div");
+    backdrop.id = "sg-send-modal";
+    backdrop.className = "sg-withdraw-backdrop";
+
+    const card = document.createElement("div");
+    card.className = "sg-withdraw-card";
+
+    card.innerHTML = `
+      <h3 class="sg-withdraw-title">Send SGT Tokens</h3>
+      <p class="sg-withdraw-sub">Available balance: ${currentSgt.toFixed(2)} SGT</p>
+      <div class="sg-withdraw-methods">
+        <button type="button" class="sg-withdraw-method-btn is-active" data-target="Username / Handle">Username</button>
+        <button type="button" class="sg-withdraw-method-btn" data-target="Wallet ID">Wallet ID</button>
+        <button type="button" class="sg-withdraw-method-btn" data-target="Phone / Mesh">Phone / Mesh</button>
+      </div>
+      <div class="sg-withdraw-field">
+        <label id="sg-send-dest-label" for="sg-send-dest">Recipient Username</label>
+        <input id="sg-send-dest" type="text" placeholder="e.g. @scottgrid_peer" />
+      </div>
+      <div class="sg-withdraw-field">
+        <label for="sg-send-amt">Amount (SGT)</label>
+        <input id="sg-send-amt" type="number" step="0.01" min="0.01" value="2.50" />
+      </div>
+      <div class="sg-withdraw-actions">
+        <button type="button" id="sg-send-cancel" class="sg-withdraw-btn sg-withdraw-cancel">Cancel</button>
+        <button type="button" id="sg-send-confirm" class="sg-withdraw-btn sg-withdraw-confirm">Send Tokens</button>
+      </div>
+    `;
+
+    backdrop.appendChild(card);
+    document.body.appendChild(backdrop);
+
+    const destLabel = card.querySelector("#sg-send-dest-label");
+    const destInput = card.querySelector("#sg-send-dest");
+    const amtInput = card.querySelector("#sg-send-amt");
+
+    card.querySelectorAll(".sg-withdraw-method-btn").forEach((mBtn) => {
+      mBtn.addEventListener("click", () => {
+        card.querySelectorAll(".sg-withdraw-method-btn").forEach((b) => b.classList.remove("is-active"));
+        mBtn.classList.add("is-active");
+        selectedTargetType = mBtn.dataset.target || "Username / Handle";
+        if (selectedTargetType === "Username / Handle") {
+          destLabel.textContent = "Recipient Username";
+          destInput.placeholder = "e.g. @scottgrid_peer";
+        } else if (selectedTargetType === "Wallet ID") {
+          destLabel.textContent = "Recipient Wallet ID";
+          destInput.placeholder = "e.g. SGT-8842-GRID";
+        } else {
+          destLabel.textContent = "Recipient Phone or Mesh ID";
+          destInput.placeholder = "e.g. +256 7XX XXX XXX";
+        }
+      });
+    });
+
+    const closeModal = () => backdrop.remove();
+    card.querySelector("#sg-send-cancel").addEventListener("click", closeModal);
+    backdrop.addEventListener("click", (e) => {
+      if (e.target === backdrop) closeModal();
+    });
+
+    card.querySelector("#sg-send-confirm").addEventListener("click", () => {
+      const dest = (destInput.value || "").trim();
+      const amt = parseFloat(amtInput.value || "");
+      if (!dest) {
+        window.alert("Please enter a recipient.");
+        destInput.focus();
+        return;
+      }
+      if (!Number.isFinite(amt) || amt <= 0) {
+        window.alert("Enter a valid SGT amount greater than 0.");
+        amtInput.focus();
+        return;
+      }
+      if (typeof recordWalletTx === "function") {
+        const ok = recordWalletTx("send", amt, `Sent to ${dest} (${selectedTargetType})`);
+        if (ok) {
+          closeModal();
+          window.alert(`Sent ${amt.toFixed(2)} SGT to ${dest}.`);
+        }
+      }
+    });
+  }
+
+  document.addEventListener(
+    "click",
+    (e) => {
+      const btn = e.target.closest("button");
+      if (!btn) return;
+      const label = (btn.textContent || "").trim().toLowerCase();
+      if (label === "send tokens" && !btn.closest("#sg-send-modal")) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        openSendModal();
+      }
+    },
+    true
+  );
+})();
