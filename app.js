@@ -1372,3 +1372,90 @@ if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("/sw.js").catch(() => {});
   });
 }
+
+(() => {
+function syncVideoCallModal() {
+document.querySelectorAll(".sg-modal-backdrop").forEach((backdrop) => {
+  const hasVideo = Boolean(backdrop.querySelector("video"));
+  const hasCallText = /video call/i.test(backdrop.textContent || "");
+  backdrop.classList.toggle("is-video-call", hasVideo || hasCallText);
+});
+}
+const obs = new MutationObserver(syncVideoCallModal);
+obs.observe(document.body, { childList: true, subtree: true });
+syncVideoCallModal();
+})();
+
+(() => {
+  function getWalletElements() {
+    const balanceEl = document.querySelector(".sg-balance-amount");
+    const subEl = document.querySelector(".sg-token-sub");
+    const cards = Array.from(document.querySelectorAll(".sg-panel-card"));
+    const txCard = cards.find((c) => /transaction|no transactions yet/i.test(c.textContent || "")) || null;
+    return { balanceEl, subEl, txCard };
+  }
+
+  function parseCurrentSgt(subText) {
+    const match = (subText || "").match(/([\d.]+)\s*SGT/i);
+    return match ? parseFloat(match[1]) : 18.13;
+  }
+
+  function applyWalletUpdate(deltaSgt, description) {
+    const { balanceEl, subEl, txCard } = getWalletElements();
+    const currentSgt = parseCurrentSgt(subEl ? subEl.textContent : "");
+    const nextSgt = Math.max(0, Number((currentSgt + deltaSgt).toFixed(2)));
+    const nextUsd = (nextSgt * 0.5234).toFixed(2);
+
+    if (balanceEl) {
+      balanceEl.textContent = `$${nextUsd}`;
+    }
+    if (subEl) {
+      subEl.textContent = `${nextSgt} SGT tokens \u2022 $${nextUsd} pending rewards \u2022 +$0.50/min live`;
+    }
+    if (txCard) {
+      if (/no transactions yet/i.test(txCard.textContent || "")) {
+        txCard.innerHTML = "";
+      }
+      const item = document.createElement("div");
+      item.style.padding = "6px 0";
+      item.style.borderBottom = "1px solid rgba(255,255,255,0.08)";
+      item.textContent = `${description} \u2014 ${Math.abs(deltaSgt).toFixed(2)} SGT`;
+      txCard.prepend(item);
+    }
+  }
+
+  function wireWalletButtons() {
+    document.querySelectorAll("button").forEach((btn) => {
+      if (btn.dataset.sgWalletReady === "1") return;
+      const label = (btn.textContent || "").trim().toLowerCase();
+
+      if (label === "send tokens") {
+        btn.dataset.sgWalletReady = "1";
+        btn.addEventListener("click", () => {
+          const recipient = window.prompt("Recipient username or wallet ID:", "@scottgrid_peer");
+          if (!recipient || !recipient.trim()) return;
+          const raw = window.prompt("Amount of SGT to send:", "2.50");
+          const amount = parseFloat(raw || "0");
+          if (!amount || amount <= 0) return;
+          applyWalletUpdate(-amount, `Sent to ${recipient.trim()}`);
+          window.alert(`Sent ${amount.toFixed(2)} SGT to ${recipient.trim()}.`);
+        });
+      }
+
+      if (label === "withdraw") {
+        btn.dataset.sgWalletReady = "1";
+        btn.addEventListener("click", () => {
+          const raw = window.prompt("Amount of SGT to withdraw:", "5.00");
+          const amount = parseFloat(raw || "0");
+          if (!amount || amount <= 0) return;
+          applyWalletUpdate(-amount, "Withdrew SGT");
+          window.alert(`Withdrew ${amount.toFixed(2)} SGT.`);
+        });
+      }
+    });
+  }
+
+  const walletObserver = new MutationObserver(wireWalletButtons);
+  walletObserver.observe(document.body, { childList: true, subtree: true });
+  wireWalletButtons();
+})();
