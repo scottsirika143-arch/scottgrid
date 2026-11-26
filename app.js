@@ -922,3 +922,50 @@ function bindNavEvents() {
 }
 
 bindNavEvents();
+
+function bindStatusUpload() {
+  const mediaInput = document.getElementById("status-media-input");
+  const strip = document.getElementById("status-circles-strip");
+
+  if (strip && mediaInput) {
+    strip.addEventListener("click", (e) => {
+      const addBtn = e.target.closest("#add-status-btn");
+      if (!addBtn) return;
+      e.stopPropagation();
+      mediaInput.value = "";
+      mediaInput.click();
+    });
+  }
+
+  if (mediaInput && !mediaInput.dataset.sgBound) {
+    mediaInput.dataset.sgBound = "1";
+    mediaInput.addEventListener("change", () => {
+      const file = mediaInput.files && mediaInput.files[0];
+      if (!file) return;
+
+      const isVideo = String(file.type || "").startsWith("video/");
+      const reader = new FileReader();
+      reader.onload = () => {
+        const mediaUrl = String(reader.result || "");
+        if (!mediaUrl) return;
+
+        const newStatus = {
+          id: `st-${Date.now()}`,
+          author: state.profile.displayName || "Scott",
+          caption: file.name || "Status",
+          mediaType: isVideo ? "video" : "image",
+          mediaUrl,
+          timeLabel: "Just now",
+          createdAt: Date.now(),
+        };
+
+        state.statuses = [newStatus, ...(Array.isArray(state.statuses) ? state.statuses : [])];
+        saveJson(STORAGE_KEYS.statuses, state.statuses);
+        renderStatusTab();
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+}
+
+bindStatusUpload();
