@@ -3093,3 +3093,42 @@ import { createClient } from "@supabase/supabase-js";
   }, 30000);
 })();
 // --- SCOTTGRID SUPABASE SYNC END ---
+
+// --- SCOTTGRID MY STORY ONLY MODE START ---
+(() => {
+  const MY_STORY_ONLY = true;
+
+  function enforceMyStoryOnly() {
+    if (!MY_STORY_ONLY) return;
+
+    const candidates = Array.from(document.querySelectorAll("*")).filter((el) => {
+      if (el.children.length < 2 || el.children.length > 25) return false;
+      const text = (el.textContent || "").toLowerCase();
+      return text.includes("my story");
+    });
+
+    for (const container of candidates) {
+      const items = Array.from(container.children).filter((child) => {
+        const rect = child.getBoundingClientRect();
+        return rect.width > 20 && rect.height > 20;
+      });
+      if (items.length <= 1) continue;
+
+      items.forEach((item, idx) => {
+        const hasMyStory = /my story/i.test(item.textContent || "");
+        const keep = hasMyStory || idx === 0;
+        item.style.display = keep ? "" : "none";
+      });
+    }
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", enforceMyStoryOnly);
+  } else {
+    enforceMyStoryOnly();
+  }
+
+  const observer = new MutationObserver(() => enforceMyStoryOnly());
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+})();
+// --- SCOTTGRID MY STORY ONLY MODE END ---
