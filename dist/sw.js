@@ -1,4 +1,4 @@
-﻿const CACHE_NAME = "scottgrid-v3";
+﻿const CACHE_NAME = "scottgrid-v4";
 const PRECACHE_URLS = [
 "/",
 "/index.html",
@@ -11,7 +11,13 @@ const PRECACHE_URLS = [
 
 self.addEventListener("install", (event) => {
 event.waitUntil(
-caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_URLS))
+caches.open(CACHE_NAME).then(async (cache) => {
+  for (const url of PRECACHE_URLS) {
+    try {
+      await cache.add(url);
+    } catch {}
+  }
+})
 );
 self.skipWaiting();
 });
@@ -32,15 +38,19 @@ if (url.origin !== self.location.origin) return;
 
 if (event.request.mode === "navigate") {
 event.respondWith(
-  fetch(event.request)
-    .then((res) => {
-      if (res && res.ok) {
-        const copy = res.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put("/index.html", copy));
-      }
-      return res;
-    })
-    .catch(() => caches.match("/index.html"))
+  caches.match(event.request).then((cached) => {
+    const networkFetch = fetch(event.request)
+      .then((res) => {
+        if (res && res.ok) {
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put("/index.html", copy));
+        }
+        return res;
+      })
+      .catch(() => cached || caches.match("/index.html"));
+
+    return cached || networkFetch;
+  })
 );
 return;
 }
@@ -48,15 +58,13 @@ return;
 event.respondWith(
 caches.match(event.request).then((cached) => {
   if (cached) return cached;
-  return fetch(event.request)
-    .then((res) => {
-      if (res && res.ok) {
-        const copy = res.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-      }
-      return res;
-    })
-    .catch(() => caches.match("/index.html"));
+  return fetch(event.request).then((res) => {
+    if (res && res.ok) {
+      const copy = res.clone();
+      caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+    }
+    return res;
+  });
 })
 );
 });
