@@ -1975,6 +1975,193 @@ syncVideoCallModal();
 })();
 
 (() => {
+  const MAIN_CURRENCIES = [
+    { code: "USD", flag: "🇺🇸", name: "US Dollar" },
+    { code: "UGX", flag: "🇺🇬", name: "Ugandan Shilling" },
+    { code: "EUR", flag: "🇪🇺", name: "Euro" },
+    { code: "GBP", flag: "🇬🇧", name: "British Pound" },
+    { code: "KES", flag: "🇰🇪", name: "Kenyan Shilling" },
+    { code: "NGN", flag: "🇳🇬", name: "Nigerian Naira" }
+  ];
+
+  const OTHER_CURRENCIES = [
+    { code: "TZS", flag: "🇹🇿", name: "Tanzanian Shilling" },
+    { code: "RWF", flag: "🇷🇼", name: "Rwandan Franc" },
+    { code: "ZAR", flag: "🇿🇦", name: "South African Rand" },
+    { code: "GHS", flag: "🇬🇭", name: "Ghanaian Cedi" },
+    { code: "ETB", flag: "🇪🇹", name: "Ethiopian Birr" },
+    { code: "CAD", flag: "🇨🇦", name: "Canadian Dollar" },
+    { code: "AUD", flag: "🇦🇺", name: "Australian Dollar" },
+    { code: "JPY", flag: "🇯🇵", name: "Japanese Yen" },
+    { code: "CNY", flag: "🇨🇳", name: "Chinese Yuan" },
+    { code: "INR", flag: "🇮🇳", name: "Indian Rupee" },
+    { code: "AED", flag: "🇦🇪", name: "UAE Dirham" },
+    { code: "CHF", flag: "🇨🇭", name: "Swiss Franc" }
+  ];
+
+  const ALL_CURRENCIES = [...MAIN_CURRENCIES, ...OTHER_CURRENCIES];
+
+  function syncSelectOption(selectEl, code) {
+    if (!selectEl) return;
+    const hasOption = Array.from(selectEl.options || []).some((opt) => opt.value === code);
+    if (!hasOption) {
+      const opt = document.createElement("option");
+      opt.value = code;
+      opt.textContent = code;
+      selectEl.appendChild(opt);
+    }
+    if (selectEl.value !== code) {
+      selectEl.value = code;
+      selectEl.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  }
+
+  function refreshPickerState(pickerEl, activeCode) {
+    if (!pickerEl) return;
+    pickerEl.querySelectorAll("[data-currency-code]").forEach((el) => {
+      el.classList.toggle("is-selected", el.dataset.currencyCode === activeCode);
+    });
+  }
+
+  function applyCurrencySelection(chosen) {
+    if (!chosen) return;
+    if (typeof state !== "undefined") {
+      if (state.profile) state.profile.displayCurrency = chosen;
+      if (state.wallet) state.wallet.currency = chosen;
+      if (typeof saveJson === "function" && typeof STORAGE_KEYS !== "undefined") {
+        if (state.profile && STORAGE_KEYS.profile) saveJson(STORAGE_KEYS.profile, state.profile);
+        if (state.wallet && STORAGE_KEYS.wallet) saveJson(STORAGE_KEYS.wallet, state.wallet);
+      }
+    }
+
+    const selectEl = document.getElementById("display-currency");
+    syncSelectOption(selectEl, chosen);
+
+    document.querySelectorAll(".sg-currency-picker").forEach((el) => {
+      refreshPickerState(el, chosen);
+    });
+
+    if (typeof render === "function") {
+      render();
+    }
+  }
+
+  function buildPickerElement(pickerId, currentCode) {
+    const pickerEl = document.createElement("div");
+    pickerEl.id = pickerId;
+    pickerEl.className = "sg-currency-picker";
+
+    const featuredLabel = document.createElement("div");
+    featuredLabel.className = "sg-currency-section-label";
+    featuredLabel.textContent = "Main Currencies (Top 6)";
+
+    const featuredGrid = document.createElement("div");
+    featuredGrid.className = "sg-currency-featured-grid";
+
+    MAIN_CURRENCIES.forEach((item) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "sg-currency-chip";
+      btn.dataset.currencyCode = item.code;
+      btn.innerHTML = `<span class="sg-currency-flag">${item.flag}</span><span class="sg-currency-code">${item.code}</span>`;
+      featuredGrid.appendChild(btn);
+    });
+
+    const scrollLabel = document.createElement("div");
+    scrollLabel.className = "sg-currency-section-label";
+    scrollLabel.textContent = "More Countries (Scroll to Browse)";
+
+    const scrollList = document.createElement("div");
+    scrollList.className = "sg-currency-scroll-list";
+
+    OTHER_CURRENCIES.forEach((item) => {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "sg-currency-row";
+      row.dataset.currencyCode = item.code;
+      row.innerHTML = `
+        <span class="sg-currency-row-left">
+          <span class="sg-currency-flag">${item.flag}</span>
+          <span class="sg-currency-code">${item.code}</span>
+          <span class="sg-currency-name">${item.name}</span>
+        </span>
+      `;
+      scrollList.appendChild(row);
+    });
+
+    pickerEl.appendChild(featuredLabel);
+    pickerEl.appendChild(featuredGrid);
+    pickerEl.appendChild(scrollLabel);
+    pickerEl.appendChild(scrollList);
+
+    pickerEl.addEventListener("click", (e) => {
+      const target = e.target.closest("[data-currency-code]");
+      if (!target) return;
+      applyCurrencySelection(target.dataset.currencyCode);
+    });
+
+    refreshPickerState(pickerEl, currentCode);
+    return pickerEl;
+  }
+
+  function mountCurrencyPickers() {
+    const selectEl = document.getElementById("display-currency");
+    const rawCode =
+      (typeof state !== "undefined" && state.profile && state.profile.displayCurrency) ||
+      (selectEl && selectEl.value) ||
+      "USD";
+    const matched = ALL_CURRENCIES.find((c) => c.code === rawCode) ? rawCode : "USD";
+
+    if (selectEl) {
+      syncSelectOption(selectEl, matched);
+      if (!document.getElementById("sg-profile-currency-picker")) {
+        const profilePicker = buildPickerElement("sg-profile-currency-picker", matched);
+        selectEl.insertAdjacentElement("afterend", profilePicker);
+      } else {
+        refreshPickerState(document.getElementById("sg-profile-currency-picker"), matched);
+      }
+      if (!selectEl.dataset.sgPickerBound) {
+        selectEl.dataset.sgPickerBound = "1";
+        selectEl.addEventListener("change", () => {
+          applyCurrencySelection(selectEl.value);
+        });
+      }
+    }
+
+    const walletTab = document.getElementById("tab-wallet");
+    if (walletTab && !document.getElementById("sg-wallet-currency-picker")) {
+      const anchor = walletTab.querySelector(".sg-wallet-actions") || walletTab.querySelector(".sg-panel-card") || walletTab;
+      const walletPicker = buildPickerElement("sg-wallet-currency-picker", matched);
+      if (anchor.classList && anchor.classList.contains("sg-wallet-actions")) {
+        anchor.insertAdjacentElement("afterend", walletPicker);
+      } else {
+        anchor.appendChild(walletPicker);
+      }
+    } else if (document.getElementById("sg-wallet-currency-picker")) {
+      refreshPickerState(document.getElementById("sg-wallet-currency-picker"), matched);
+    }
+  }
+
+  const observer = new MutationObserver(() => {
+    mountCurrencyPickers();
+  });
+
+  if (document.body) {
+    observer.observe(document.body, { childList: true, subtree: true });
+    mountCurrencyPickers();
+  } else {
+    document.addEventListener("DOMContentLoaded", () => {
+      observer.observe(document.body, { childList: true, subtree: true });
+      mountCurrencyPickers();
+    });
+  }
+})();
+
+(() => {
+  const PULSE_TAGS = ["Signal", "Drop", "Alert", "Note"];
+  const FILTER_TABS = ["All", "Saved", ...PULSE_TAGS];
+  let activeFilter = "All";
+  let selectedTag = "Signal";
 
   function getFeedList() {
     if (typeof state !== "undefined" && Array.isArray(state.feed)) {
@@ -2036,7 +2223,7 @@ syncVideoCallModal();
         bar.querySelectorAll("[data-feed-filter]").forEach((el) => {
           el.classList.toggle("is-active", el.dataset.feedFilter === activeFilter);
         });
-        runUiSync();
+        enhanceFeedCards();
       });
       bar.appendChild(btn);
     });
@@ -2083,20 +2270,17 @@ syncVideoCallModal();
         item.tag === activeFilter;
 
       const show = matchesQuery && matchesFilter;
-      if (card.style.display !== (show ? "" : "none")) {
-        card.style.display = show ? "" : "none";
-      }
+      card.style.display = show ? "" : "none";
       if (show) visibleCount += 1;
 
       const metaEl = card.querySelector(".sg-chat-meta");
-      let badge = card.querySelector(".sg-feed-tag-badge");
-      if (metaEl && !badge) {
-        badge = document.createElement("span");
+      if (metaEl && !card.querySelector(".sg-feed-tag-badge")) {
+        const badge = document.createElement("span");
         badge.className = "sg-feed-tag-badge";
         badge.textContent = item.tag;
         metaEl.appendChild(badge);
-      } else if (badge && badge.textContent !== item.tag) {
-        badge.textContent = item.tag;
+      } else if (card.querySelector(".sg-feed-tag-badge")) {
+        card.querySelector(".sg-feed-tag-badge").textContent = item.tag;
       }
 
       if (!card.querySelector(".sg-feed-actions")) {
@@ -2111,7 +2295,7 @@ syncVideoCallModal();
           item.acked = !item.acked;
           item.acks = Math.max(0, item.acks + (item.acked ? 1 : -1));
           persistFeed();
-          runUiSync();
+          enhanceFeedCards();
         });
 
         const saveBtn = document.createElement("button");
@@ -2121,7 +2305,7 @@ syncVideoCallModal();
         saveBtn.addEventListener("click", () => {
           item.saved = !item.saved;
           persistFeed();
-          runUiSync();
+          enhanceFeedCards();
         });
 
         const copyBtn = document.createElement("button");
@@ -2150,33 +2334,17 @@ syncVideoCallModal();
         const btns = card.querySelectorAll(".sg-feed-action-btn");
         if (btns[0]) {
           btns[0].classList.toggle("is-active", Boolean(item.acked));
-          const ackLabel = `Ack (${item.acks})`;
-          if (btns[0].textContent !== ackLabel) btns[0].textContent = ackLabel;
+          btns[0].textContent = `Ack (${item.acks})`;
         }
         if (btns[1]) {
           btns[1].classList.toggle("is-active", Boolean(item.saved));
-          const saveLabel = item.saved ? "Saved" : "Save";
-          if (btns[1].textContent !== saveLabel) btns[1].textContent = saveLabel;
+          btns[1].textContent = item.saved ? "Saved" : "Save";
         }
       }
     });
 
     if (emptyEl && feed.length > 0) {
-      const nextDisplay = visibleCount === 0 ? "block" : "none";
-      if (emptyEl.style.display !== nextDisplay) {
-        emptyEl.style.display = nextDisplay;
-      }
-    }
-  }
-
-  function runUiSync() {
-    if (isEnhancing) return;
-    isEnhancing = true;
-    try {
-      mountCurrencyPicker();
-      enhanceFeedCards();
-    } finally {
-      isEnhancing = false;
+      emptyEl.style.display = visibleCount === 0 ? "block" : "none";
     }
   }
 
@@ -2192,24 +2360,207 @@ syncVideoCallModal();
           feed[0].saved = false;
           persistFeed();
         }
-        runUiSync();
+        enhanceFeedCards();
       }, 30);
     }, true);
   }
 
   const observer = new MutationObserver(() => {
-    if (!isEnhancing) {
-      runUiSync();
+    if (document.getElementById("feed-items") || document.getElementById("feed-post-form")) {
+      enhanceFeedCards();
     }
   });
 
   if (document.body) {
     observer.observe(document.body, { childList: true, subtree: true });
-    runUiSync();
+    enhanceFeedCards();
   } else {
     document.addEventListener("DOMContentLoaded", () => {
       observer.observe(document.body, { childList: true, subtree: true });
-      runUiSync();
+      enhanceFeedCards();
+    });
+  }
+})();
+
+(() => {
+  const MAIN_CURRENCIES = [
+    { code: "USD", flag: "🇺🇸", name: "US Dollar" },
+    { code: "UGX", flag: "🇺🇬", name: "Ugandan Shilling" },
+    { code: "EUR", flag: "🇪🇺", name: "Euro" },
+    { code: "GBP", flag: "🇬🇧", name: "British Pound" },
+    { code: "KES", flag: "🇰🇪", name: "Kenyan Shilling" },
+    { code: "NGN", flag: "🇳🇬", name: "Nigerian Naira" }
+  ];
+
+  const OTHER_CURRENCIES = [
+    { code: "TZS", flag: "🇹🇿", name: "Tanzanian Shilling" },
+    { code: "RWF", flag: "🇷🇼", name: "Rwandan Franc" },
+    { code: "ZAR", flag: "🇿🇦", name: "South African Rand" },
+    { code: "GHS", flag: "🇬🇭", name: "Ghanaian Cedi" },
+    { code: "ETB", flag: "🇪🇹", name: "Ethiopian Birr" },
+    { code: "CAD", flag: "🇨🇦", name: "Canadian Dollar" },
+    { code: "AUD", flag: "🇦🇺", name: "Australian Dollar" },
+    { code: "JPY", flag: "🇯🇵", name: "Japanese Yen" },
+    { code: "CNY", flag: "🇨🇳", name: "Chinese Yuan" },
+    { code: "INR", flag: "🇮🇳", name: "Indian Rupee" },
+    { code: "AED", flag: "🇦🇪", name: "UAE Dirham" },
+    { code: "CHF", flag: "🇨🇭", name: "Swiss Franc" }
+  ];
+
+  const ALL_CURRENCIES = [...MAIN_CURRENCIES, ...OTHER_CURRENCIES];
+
+  function syncSelectOption(selectEl, code) {
+    if (!selectEl) return;
+    const hasOption = Array.from(selectEl.options || []).some((opt) => opt.value === code);
+    if (!hasOption) {
+      const opt = document.createElement("option");
+      opt.value = code;
+      opt.textContent = code;
+      selectEl.appendChild(opt);
+    }
+    if (selectEl.value !== code) {
+      selectEl.value = code;
+      selectEl.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  }
+
+  function refreshPickerState(pickerEl, activeCode) {
+    if (!pickerEl) return;
+    pickerEl.querySelectorAll("[data-currency-code]").forEach((el) => {
+      el.classList.toggle("is-selected", el.dataset.currencyCode === activeCode);
+    });
+  }
+
+  function applyCurrencySelection(chosen) {
+    if (!chosen) return;
+    if (typeof state !== "undefined") {
+      if (state.profile) state.profile.displayCurrency = chosen;
+      if (state.wallet) state.wallet.currency = chosen;
+      if (typeof saveJson === "function" && typeof STORAGE_KEYS !== "undefined") {
+        if (state.profile && STORAGE_KEYS.profile) saveJson(STORAGE_KEYS.profile, state.profile);
+        if (state.wallet && STORAGE_KEYS.wallet) saveJson(STORAGE_KEYS.wallet, state.wallet);
+      }
+    }
+
+    const selectEl = document.getElementById("display-currency");
+    syncSelectOption(selectEl, chosen);
+
+    document.querySelectorAll(".sg-currency-picker").forEach((el) => {
+      refreshPickerState(el, chosen);
+    });
+
+    if (typeof render === "function") {
+      render();
+    }
+  }
+
+  function buildPickerElement(pickerId, currentCode) {
+    const pickerEl = document.createElement("div");
+    pickerEl.id = pickerId;
+    pickerEl.className = "sg-currency-picker";
+
+    const featuredLabel = document.createElement("div");
+    featuredLabel.className = "sg-currency-section-label";
+    featuredLabel.textContent = "Main Currencies (Top 6)";
+
+    const featuredGrid = document.createElement("div");
+    featuredGrid.className = "sg-currency-featured-grid";
+
+    MAIN_CURRENCIES.forEach((item) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "sg-currency-chip";
+      btn.dataset.currencyCode = item.code;
+      btn.innerHTML = `<span class="sg-currency-flag">${item.flag}</span><span class="sg-currency-code">${item.code}</span>`;
+      featuredGrid.appendChild(btn);
+    });
+
+    const scrollLabel = document.createElement("div");
+    scrollLabel.className = "sg-currency-section-label";
+    scrollLabel.textContent = "More Countries (Scroll to Browse)";
+
+    const scrollList = document.createElement("div");
+    scrollList.className = "sg-currency-scroll-list";
+
+    OTHER_CURRENCIES.forEach((item) => {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "sg-currency-row";
+      row.dataset.currencyCode = item.code;
+      row.innerHTML = `
+        <span class="sg-currency-row-left">
+          <span class="sg-currency-flag">${item.flag}</span>
+          <span class="sg-currency-code">${item.code}</span>
+          <span class="sg-currency-name">${item.name}</span>
+        </span>
+      `;
+      scrollList.appendChild(row);
+    });
+
+    pickerEl.appendChild(featuredLabel);
+    pickerEl.appendChild(featuredGrid);
+    pickerEl.appendChild(scrollLabel);
+    pickerEl.appendChild(scrollList);
+
+    pickerEl.addEventListener("click", (e) => {
+      const target = e.target.closest("[data-currency-code]");
+      if (!target) return;
+      applyCurrencySelection(target.dataset.currencyCode);
+    });
+
+    refreshPickerState(pickerEl, currentCode);
+    return pickerEl;
+  }
+
+  function mountCurrencyPickers() {
+    const selectEl = document.getElementById("display-currency");
+    const rawCode =
+      (typeof state !== "undefined" && state.profile && state.profile.displayCurrency) ||
+      (selectEl && selectEl.value) ||
+      "USD";
+    const matched = ALL_CURRENCIES.find((c) => c.code === rawCode) ? rawCode : "USD";
+
+    if (selectEl) {
+      syncSelectOption(selectEl, matched);
+      if (!document.getElementById("sg-profile-currency-picker")) {
+        const profilePicker = buildPickerElement("sg-profile-currency-picker", matched);
+        selectEl.insertAdjacentElement("afterend", profilePicker);
+      } else {
+        refreshPickerState(document.getElementById("sg-profile-currency-picker"), matched);
+      }
+      if (!selectEl.dataset.sgPickerBound) {
+        selectEl.dataset.sgPickerBound = "1";
+        selectEl.addEventListener("change", () => {
+          applyCurrencySelection(selectEl.value);
+        });
+      }
+    }
+
+    const walletTab = document.getElementById("tab-wallet");
+    if (walletTab && !document.getElementById("sg-wallet-currency-picker")) {
+      const anchor = walletTab.querySelector(".sg-wallet-actions") || walletTab.querySelector(".sg-panel-card") || walletTab;
+      const walletPicker = buildPickerElement("sg-wallet-currency-picker", matched);
+      if (anchor.classList && anchor.classList.contains("sg-wallet-actions")) {
+        anchor.insertAdjacentElement("afterend", walletPicker);
+      } else {
+        anchor.appendChild(walletPicker);
+      }
+    } else if (document.getElementById("sg-wallet-currency-picker")) {
+      refreshPickerState(document.getElementById("sg-wallet-currency-picker"), matched);
+    }
+  }
+
+  const observer = new MutationObserver(() => {
+    mountCurrencyPickers();
+  });
+
+  if (document.body) {
+    observer.observe(document.body, { childList: true, subtree: true });
+    mountCurrencyPickers();
+  } else {
+    document.addEventListener("DOMContentLoaded", () => {
+      observer.observe(document.body, { childList: true, subtree: true });
+      mountCurrencyPickers();
     });
   }
 })();
